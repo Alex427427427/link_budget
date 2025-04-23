@@ -87,7 +87,7 @@ oxyheaders = ["f0", "a1", "a2", "a3", "a4", "a5", "a6"]
 oxydf = pd.DataFrame(oxydata, columns=oxyheaders)
 waterlines = watertxt.split('\n')
 waterdata = [line.split(" ") for line in waterlines]
-waterheaders = ["f0", "a1", "a2", "a3", "a4", "a5", "a6"]
+waterheaders = ["f0", "b1", "b2", "b3", "b4", "b5", "b6"]
 waterdf = pd.DataFrame(waterdata, columns=waterheaders)
 
 oxydf.to_csv(Path(__file__).parent / "atmos_data" / "oxyspec.csv", index=False)
