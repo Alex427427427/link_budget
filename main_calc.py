@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import kml_point_in_polygon as kpip
+import kml_gain_query as kgq
 
 C_FREE_SPACE = 299792458.0 # m/s
 R_GEO = 42164000 # m
@@ -210,10 +210,8 @@ if __name__ == "__main__":
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
     }
-    EIRP_sat = kpip.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
-    GT_sat = kpip.highest_GT_query(gate['lat'], gate['lon']) # dB/K
-    print(f"Satellite EIRP: {EIRP_sat} dBW")
-    print(f"Satellite G/T: {GT_sat} dB/K")
+    EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
     # satellite specs
     sat = {
         'lat': 0, # degrees
