@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import kml_point_in_polygon as kpip
 
 C_FREE_SPACE = 299792458.0 # m/s
 R_GEO = 42164000 # m
@@ -31,6 +33,25 @@ def geo_to_ECEF(lat, lon, alt):
     z = ((1-ECCENTRICITY_EARTH**2)*prime_vertical_radius + alt)*np.sin(lat)
     return x, y, z
 
+def elevation(lat1, lon1, alt1, lat2, lon2, alt2):
+    '''
+    Elevation pointing from ground station to geo satellite
+    '''
+    x1, y1, z1 = geo_to_ECEF(lat1, lon1, alt1)
+    x2, y2, z2 = geo_to_ECEF(lat2, lon2, alt2)
+    # calculate the distance between the two points
+    d = dist(x1, y1, z1, x2, y2, z2)
+    # calculate the elevation angle using vector geometry
+    r1 = np.array([x1, y1, z1])
+    r2 = np.array([x2, y2, z2])
+    v = r2 - r1 
+    v_norm = np.linalg.norm(v)
+    v_unit = v / v_norm
+    r1_unit = r1 / np.linalg.norm(r1)
+    elevation_angle = np.arcsin(np.dot(v_unit, r1_unit))
+    return elevation_angle
+
+
 def dist(x1, y1, z1, x2, y2, z2):
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
 
@@ -43,6 +64,36 @@ def noise_power_per_T(BW):
     returns: power in dBW per K
     '''
     return K_DBW_per_HZ_K + 10*np.log10(BW)
+
+def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, BW):
+    ''' 
+    using simple model for atmospheric loss
+    ITU-R P.676-13
+    '''
+    # calculate the distance between the ground station and the satellite
+    x_gnd, y_gnd, z_gnd = geo_to_ECEF(lat_gnd, lon_gnd, alt_gnd)
+    x_sat, y_sat, z_sat = geo_to_ECEF(lat_sat, lon_sat, alt_sat)
+    d = dist(x_gnd, y_gnd, z_gnd, x_sat, y_sat, z_sat)
+    # calculate the elevation angle
+    elevation_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
+    # slant path length
+    # assume atmosphere has a height of 7 km
+    h = 10 # km
+    slant_path_length = h / np.sin(elevation_angle)
+    # specific attenuation in dB / km for oxygen and water vapour
+    # using ITU-R P.676-13 model
+    T = 15 + 273.15 # K
+    theta = 300 / T
+    water_vapour_density = 7.5 # g/m^3
+    water_partial_pressure = water_vapour_density * T / 216.7 # hPa
+    dry_air_pressure = 1013.25 # hPa
+    gamma_total = 0.1 # dB/km
+    # atmospheric loss in dB
+    L_atm = gamma_total * slant_path_length
+    return L_atm
+
+def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, BW):
+    return 0.0
 
 def single_link_CNR(EIRP_tx, L_total, G_per_T_rx, noise_power_per_T):
     return EIRP_tx - L_total + G_per_T_rx - noise_power_per_T
@@ -72,8 +123,16 @@ def full_link_budget(
     L_up_path = FSPL(dist_up, f_up) # dB
     L_down_path = FSPL(dist_down, f_down) # dB
 
-    L_atm_up = 0 # dB, atmospheric loss in uplink
-    L_atm_down = 0 # dB, atmospheric loss in downlink
+    L_atm_up = atmospheric_loss(
+        Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_up, BW
+    ) # dB, atmospheric loss in uplink
+    L_atm_down = atmospheric_loss(
+        Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_down, BW
+    ) # dB, atmospheric loss in downlink
 
     noise = noise_power_per_T(BW) # dBW/K
 
@@ -126,117 +185,122 @@ if __name__ == "__main__":
     COD_table = COD_table[sorted_indices]
 
     # Communication specs
-    BW = 200e6 # bandwidth in Hz
-    BIT_RATE = 1e9 # bit rate in bps
-    F_UP_FORWARD = 27e9 # uplink frequency in Hz
-    F_DOWN_FORWARD = F_UP_FORWARD - 8e9 # downlink frequency in Hz
-    F_UP_RETURN = 25e9 # uplink frequency in Hz
-    F_DOWN_RETURN = F_UP_RETURN - 10e9 # downlink frequency in Hz
+    BW = 230e6 # bandwidth in Hz
+    BIT_RATE = 3e8 # bit rate in bps
+    F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
+    F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
+    F_UP_RETURN = 29.62e9 # uplink frequency in Hz
+    F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
 
     # gateway specs
-    GATE = {
-        'lat': 15, # degrees
-        'lon': 15, # degrees
-        'alt': 100.0, # meters
-        'PSD': 50e-6, # dBW/Hz
-        'EIRP': 50e-6 + 10*np.log10(BW), # dBW
-        'G/T': 30, # dB/K
-        'C/IM': 30.0 # dB
+    gate = {
+        'lat': 36, # degrees
+        'lon': 19, # degrees
+        'alt': 0.0, # meters
+        'PSD': 57.5e-6, # dBW/Hz
+        'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
+        'G/T': 38.2, # dB/K
+        'C/IM': 20.0 # dB
     }
-
+    # user terminal specs
+    uterm = {
+        'lat': 36, # degrees
+        'lon': 19, # degrees
+        'alt': 0.3048 * 30000, # meters
+        'EIRP': 58.5, # dBW
+        'G/T': 15.0 # dB/K
+    }
+    EIRP_sat = kpip.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    GT_sat = kpip.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    print(f"Satellite EIRP: {EIRP_sat} dBW")
+    print(f"Satellite G/T: {GT_sat} dB/K")
     # satellite specs
-    SAT = {
+    sat = {
         'lat': 0, # degrees
         'lon': 31.0, # degrees
         'alt': R_GEO - R_EQUATOR, # meters
-        'EIRP': 50, # dBW
-        'G/T': 30 # dB/K
+        'EIRP': EIRP_sat, # dBW
+        'G/T': GT_sat # dB/K
     }
-
-    # user terminal specs
-    USER = {
-        'lat': 20, # degrees
-        'lon': 40, # degrees
-        'alt': 6000, # meters
-        'EIRP': 50, # dBW
-        'G/T': 30.0 # dB/K
-    }
-
-    forward_results = full_link_budget(
-        EIRP_Earth_start=GATE['EIRP'], # dBW
-        Earth_start_lat_lon_alt=(np.radians(GATE['lat']), np.radians(GATE['lon']), GATE['alt']), # lat, lon, alt in radians and meters
-        sat_lat_lon_alt=(np.radians(SAT['lat']), np.radians(SAT['lon']), SAT['alt']), # lat, lon, alt in radians and meters
-        G_per_T_sat=SAT['G/T'], # dB/K
-        EIRP_sat=SAT['EIRP'], # dBW
-        Earth_end_lat_lon_alt=(np.radians(USER['lat']), np.radians(USER['lon']), USER['alt']), # lat, lon, alt in radians and meters
-        G_per_T_Earth_end=USER['G/T'], # dB/K
-        f_up=F_UP_FORWARD, # frequency in Hz
-        f_down=F_DOWN_FORWARD, # frequency in Hz
-        BW=BW, # bandwidth in Hz
-        bit_rate=BIT_RATE, # bit rate in bps
-        C_IM=GATE['C/IM'] # dB
-    )
-
-    return_results = full_link_budget(
-        EIRP_Earth_start=USER['EIRP'], # dBW
-        Earth_start_lat_lon_alt=(np.radians(USER['lat']), np.radians(USER['lon']), USER['alt']), # lat, lon, alt in radians and meters
-        sat_lat_lon_alt=(np.radians(SAT['lat']), np.radians(SAT['lon']), SAT['alt']), # lat, lon, alt in radians and meters
-        G_per_T_sat=SAT['G/T'], # dB/K
-        EIRP_sat=SAT['EIRP'], # dBW
-        Earth_end_lat_lon_alt=(np.radians(GATE['lat']), np.radians(GATE['lon']), GATE['alt']), # lat, lon, alt in radians and meters
-        G_per_T_Earth_end=GATE['G/T'], # dB/K
-        f_up=F_UP_RETURN, # frequency in Hz
-        f_down=F_DOWN_RETURN, # frequency in Hz
-        BW=BW, # bandwidth in Hz
-        bit_rate=BIT_RATE, # bit rate in bps
-        C_IM=GATE['C/IM'] # dB
-    )
-
-    print("\nLink Budget Calculation Results")
-    print("=====================================")
-
-    print("Forward Link: ")
-    print("=====================================")
-    for k, v in forward_results.items():
-        print(f"{k}: {v}")
-
-    print("\n")
     
-    print("Return Link: ")
-    print("=====================================")
-    for k, v in return_results.items():
-        print(f"{k}: {v}")
-
-    # given the Eb/N0, find the MODCOD
-    forward_EbN0 = forward_results['Eb/N0_dB']
-    return_EbN0 = return_results['Eb/N0_dB']
-    if forward_EbN0 < EbN0_table[0]:
-        forward_MOD = "None"
-        forward_COD = "None"
-    elif forward_EbN0 > EbN0_table[-1]:
-        forward_MOD = MOD_table[-1]
-        forward_COD = COD_table[-1]
+    if sat['EIRP'] is None or sat['G/T'] is None:
+        print("No link found for the given coordinates.")
     else:
-        forward_MOD = MOD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
-        forward_COD = COD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
-    if return_EbN0 < EbN0_table[0]:
-        return_MOD = "None"
-        return_COD = "None"
-    elif return_EbN0 > EbN0_table[-1]:
-        return_MOD = MOD_table[-1]
-        return_COD = COD_table[-1]
-    else:
-        return_MOD = MOD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
-        return_COD = COD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
+        forward_results = full_link_budget(
+            EIRP_Earth_start=gate['EIRP'], # dBW
+            Earth_start_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+            G_per_T_sat=sat['G/T'], # dB/K
+            EIRP_sat=sat['EIRP'], # dBW
+            Earth_end_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+            G_per_T_Earth_end=uterm['G/T'], # dB/K
+            f_up=F_UP_FORWARD, # frequency in Hz
+            f_down=F_DOWN_FORWARD, # frequency in Hz
+            BW=BW, # bandwidth in Hz
+            bit_rate=BIT_RATE, # bit rate in bps
+            C_IM=gate['C/IM'] # dB
+        )
 
-    print("\n")
-    print("Forward Link MODCOD: ")
-    print("=====================================")
-    print(f"MOD: {forward_MOD}")
-    print(f"COD: {forward_COD}")
-    print("\n")
-    print("Return Link MODCOD: ")
-    print("=====================================")
-    print(f"MOD: {return_MOD}")
-    print(f"COD: {return_COD}")
-    print("\n")
+        return_results = full_link_budget(
+            EIRP_Earth_start=uterm['EIRP'], # dBW
+            Earth_start_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+            G_per_T_sat=sat['G/T'], # dB/K
+            EIRP_sat=sat['EIRP'], # dBW
+            Earth_end_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+            G_per_T_Earth_end=gate['G/T'], # dB/K
+            f_up=F_UP_RETURN, # frequency in Hz
+            f_down=F_DOWN_RETURN, # frequency in Hz
+            BW=BW, # bandwidth in Hz
+            bit_rate=BIT_RATE, # bit rate in bps
+            C_IM=gate['C/IM'] # dB
+        )
+
+        print("\nLink Budget Calculation Results")
+        print("=====================================")
+
+        print("Forward Link: ")
+        print("=====================================")
+        for k, v in forward_results.items():
+            print(f"{k}: {v}")
+
+        print("\n")
+        
+        print("Return Link: ")
+        print("=====================================")
+        for k, v in return_results.items():
+            print(f"{k}: {v}")
+
+        # given the Eb/N0, find the MODCOD
+        forward_EbN0 = forward_results['Eb/N0_dB']
+        return_EbN0 = return_results['Eb/N0_dB']
+        if forward_EbN0 < EbN0_table[0]:
+            forward_MOD = "None"
+            forward_COD = "None"
+        elif forward_EbN0 > EbN0_table[-1]:
+            forward_MOD = MOD_table[-1]
+            forward_COD = COD_table[-1]
+        else:
+            forward_MOD = MOD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
+            forward_COD = COD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
+        if return_EbN0 < EbN0_table[0]:
+            return_MOD = "None"
+            return_COD = "None"
+        elif return_EbN0 > EbN0_table[-1]:
+            return_MOD = MOD_table[-1]
+            return_COD = COD_table[-1]
+        else:
+            return_MOD = MOD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
+            return_COD = COD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
+
+        print("\n")
+        print("Forward Link MODCOD: ")
+        print("=====================================")
+        print(f"MOD: {forward_MOD}")
+        print(f"COD: {forward_COD}")
+        print("\n")
+        print("Return Link MODCOD: ")
+        print("=====================================")
+        print(f"MOD: {return_MOD}")
+        print(f"COD: {return_COD}")
+        print("\n")
