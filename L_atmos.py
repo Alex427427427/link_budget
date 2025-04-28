@@ -14,7 +14,7 @@ f0_o2, a1_o2, a2_o2, a3_o2, a4_o2, a5_o2, a6_o2 = oxydf["f0"].astype(float).valu
 f0_h2o, b1_h2o, b2_h2o, b3_h2o, b4_h2o, b5_h2o, b6_h2o = waterdf["f0"].astype(float).values, \
                         waterdf["b1"].astype(float).values, waterdf["b2"].astype(float).values, waterdf["b3"].astype(float).values, \
                         waterdf["b4"].astype(float).values, waterdf["b5"].astype(float).values, waterdf["b6"].astype(float).values
-print(b4_h2o)
+
 # 1976 standard atmosphere ITU-R 835
 grads = [-6.5, 0.0, 1.0, 2.8, 0.0, -2.8, -2.0] # temperature gradients in K/km
 alts = [0, 11, 20, 32, 47, 51, 71, 85] # altitudes in km
@@ -65,6 +65,50 @@ def standard_P(h):
 def standard_rho(h):
     return 7.5 * np.exp(- h / 6.0) # water vapour density in g/m^3
 
+def shape_factor(f, f0, f_Delta, delta):
+    '''
+    Calculate the shape factor for a given frequency, line width, and interference correction.
+    f: frequency in GHz
+    f0: line center frequency in GHz
+    f_Delta: line width in GHz
+    delta: interference correction in GHz
+    '''
+    return f / f0 * (
+        (f_Delta - delta*(f0 - f))
+        /
+        ((f0 - f)**2 + f_Delta**2) 
+        + 
+        (f_Delta - delta*(f0 + f))
+        /
+        ((f0+f)**2 + f_Delta**2)
+    ) # shape factor
+
+def line_width_o2(a3, p, th, a4, e):
+    '''
+    Calculate the line width for oxygen.
+    a3: line width coefficient
+    p: pressure in hPa
+    th: temperature in K
+    a4: line width exponent
+    e: water vapour pressure in hPa
+    '''
+    f_Delta = a3 * 10**(-4) * (p * th**(0.8-a4) + 1.1 * e * th) # line width
+    f_Delta = np.sqrt(f_Delta**2 + 2.25e-6) # zeeman splitting of oxygen lines
+    return f_Delta
+
+def interference_o2(a5, a6, th, p, e):
+    '''
+    Calculate the interference correction for oxygen.
+    a5: interference correction coefficient
+    a6: interference correction exponent
+    th: temperature in K
+    p: pressure in hPa
+    e: water vapour pressure in hPa
+    '''
+    inter_d = (a5 + a6 * th) * 10**(-4) * (p + e)*th**0.8 # interference correction
+    return inter_d
+
+
 def specific_absorption(f, T=288.15, p=1013.25, rho=7.5):
     '''
     Calculate the specific absorption of oxygen and water vapour in dB/km.
@@ -84,25 +128,74 @@ def specific_absorption(f, T=288.15, p=1013.25, rho=7.5):
     N_o2 = N_dry
     for f0, a1, a2, a3, a4, a5, a6 in zip(f0_o2, a1_o2, a2_o2, a3_o2, a4_o2, a5_o2, a6_o2):
         S_i = a1*10**(-7) * p * th**3 * np.exp(a2*(1-th)) # strength of line i
-        delta_f = a3 * 10**(-4) * (p * th**(0.8-a4) + 1.1 * e * th) # line width
-        delta_f = np.sqrt(delta_f**2 + 2.25e-6) # zeeman splitting of oxygen lines
-        inter_d = (a5 + a6 * th) * 10**(-4) * (p + e)*th**0.8 # interference correction
-        F_i = f / f0 * (
-            (delta_f - inter_d*(f0 - f))/((f0 - f)**2 + delta_f**2) + (delta_f - inter_d*(f0 + f)/((f0+f)**2 + delta_f**2))
-        ) # shape factor
+        delta_f = line_width_o2(a3, p, th, a4, e) # line width
+        inter_d = interference_o2(a5, a6, th, p, e) # interference correction
+        F_i = shape_factor(f, f0, delta_f, inter_d) # shape factor
         N_o2 += S_i * F_i
+        #N_o2_list.append(N_o2)
     # water vapour absorption
     N_h2o = 0
     for f0, b1, b2, b3, b4, b5, b6 in zip(f0_h2o, b1_h2o, b2_h2o, b3_h2o, b4_h2o, b5_h2o, b6_h2o):
         S_i = b1*10**(-1) * e * th**3.5 * np.exp(b2*(1-th))
         delta_f = b3 * 10**(-4) * (p * th**b4 + b5 * e * th**b6) # line width
         delta_f = 0.535*delta_f + np.sqrt(0.217*delta_f**2 + 2.1316e-12*f0**2 / th) # zeeman splitting of oxygen lines
-        inter_d = 0.0 # interference correction
-        F_i = f / f0 * ((delta_f - inter_d*(f0 - f))/((f0 - f)**2 + delta_f**2) + (delta_f - inter_d*(f0 + f)/((f0+f)**2 + delta_f**2))) # shape factor
-        N_o2 += S_i * F_i
-    
-    return 0.182 * f * (N_o2 + N_h2o) 
+        F_i = shape_factor(f, f0, delta_f, 0.0) # shape factor
+        N_h2o += S_i * F_i
+        #N_h2o_list.append(N_h2o)
+    gamma = 0.182 * f * (N_o2 + N_h2o) # specific absorption 
+    return gamma # in dB/km
+'''
+# plot shape factor over frequencies
+f_list = np.linspace(50, 70, 1000) # frequency in GHz
+index = 10
+f0 = f0_o2[index] # line center frequency in GHz
+f_Delta = line_width_o2(a3_o2[index], 1013.25, 300/288.15, a4_o2[index], 7.5*288.15/216.7) # line width in GHz
+print(f"Line width: {f_Delta} GHz")
+#f_Delta = 0.5
+delta = interference_o2(a5_o2[index], a6_o2[index], 300/288.15, 1013.25, 7.5*288.15/216.7) # interference correction in GHz
+#delta = 0.0
+F_list = []
+for f in f_list:
+    F = shape_factor(f, f0, f_Delta, delta)
+    F_list.append(F)
+F_list = np.array(F_list)
+plt.plot(f_list, F_list, color='k', label="Shape factor")
+plt.xlabel("Frequency (GHz)")
+plt.ylabel("Shape factor")
+plt.title("Shape factor for oxygen and water vapour")
+plt.grid()
+plt.show()
+total_area = scipy.integrate.simps(F_list, f_list) # total area under the curve
+print(f"Total area under the curve: {total_area}")
+'''
+'''
+start_freq = 50 # GHz
+end_freq = 70 # GHz
+freq_list = np.linspace(start_freq, end_freq, 1000) # frequency in GHz
+altitude_list = np.array([0,5,10,15,20])
+gamma_list = np.zeros((len(altitude_list), len(freq_list))) # specific absorption in dB/km
+for i, h in enumerate(altitude_list):
+    for j, f in enumerate(freq_list):
+        T = standard_T(h)
+        P = standard_P(h)
+        rho = standard_rho(h)
+        gamma_list[i, j] = specific_absorption(f, T, P, rho)
 
+# plot
+plt.figure(figsize=(10, 5))
+for i, h in enumerate(altitude_list):
+    plt.plot(freq_list, gamma_list[i], label=f"{h} km")
+plt.xlabel("Frequency (GHz)")
+plt.ylabel("Specific absorption (dB/km)")
+plt.title("Specific absorption of oxygen")
+# set y axis to log scale
+plt.yscale("log")
+plt.xlim(start_freq, end_freq)
+plt.legend()
+plt.grid()
+plt.savefig("o2_specific_absorption_at_altitudes.png")
+plt.show()
+'''
 def total_attenuation(f, elevation_angle, initial_h=0, final_h=85, num_h=1000):
     '''
     Calculate the total attenuation in dB/km.
@@ -149,6 +242,7 @@ def standard_rho_list(h_list):
     '''
     return np.array([standard_rho(h) for h in h_list])
 
+'''
 # plot gamma
 h_list = np.linspace(0, 85, 100)
 plt.plot(h_list, total_attenuation(30, 0.5, initial_h=0, final_h=85, num_h=100), color='k', label="Total attenuation")
@@ -177,4 +271,29 @@ axes[2].set_xlabel("Altitude (km)")
 axes[2].grid()
 plt.tight_layout()
 plt.savefig("standard_atmosphere.png")
+plt.show()
+'''
+# plot specific absorption at standard atmosphere for 0-1000 GHz
+f_list = np.linspace(0, 1000, 1000) # frequency in GHz
+alts = np.array([0, 5, 10, 15, 20])
+gamma_list = np.zeros((len(alts), len(f_list))) # specific absorption in dB/km
+for i, h in enumerate(alts):
+    T = standard_T(h)
+    P = standard_P(h)
+    rho = standard_rho(h)
+    for j, f in enumerate(f_list):
+        gamma_list[i, j] = specific_absorption(f, T, P, rho) # specific absorption in dB/km
+# plot
+plt.figure(figsize=(10, 5))
+for i, h in enumerate(alts):
+    plt.plot(f_list, gamma_list[i], label=f"{h} km")
+plt.xlabel("Frequency (GHz)")
+plt.ylabel("Specific absorption (dB/km)")
+plt.title("Specific absorption of oxygen and water vapour")
+# set y axis to log scale
+plt.yscale("log")
+plt.xlim(0, 1000)
+plt.legend()
+plt.grid()
+plt.savefig("total_specific_absorption_at_altitudes.png")
 plt.show()
