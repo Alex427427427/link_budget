@@ -1,9 +1,7 @@
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 import scipy
-import scipy.integrate
+import numpy as np
 
 # oxygen and water spectroscopic data
 oxydf = pd.read_csv(Path(__file__).parent / "atmos_data" / "oxyspec.csv")
@@ -144,63 +142,14 @@ def specific_absorption(f, T=288.15, p=1013.25, rho=7.5):
         #N_h2o_list.append(N_h2o)
     gamma = 0.182 * f * (N_o2 + N_h2o) # specific absorption 
     return gamma # in dB/km
-'''
-# plot shape factor over frequencies
-f_list = np.linspace(50, 70, 1000) # frequency in GHz
-index = 10
-f0 = f0_o2[index] # line center frequency in GHz
-f_Delta = line_width_o2(a3_o2[index], 1013.25, 300/288.15, a4_o2[index], 7.5*288.15/216.7) # line width in GHz
-print(f"Line width: {f_Delta} GHz")
-#f_Delta = 0.5
-delta = interference_o2(a5_o2[index], a6_o2[index], 300/288.15, 1013.25, 7.5*288.15/216.7) # interference correction in GHz
-#delta = 0.0
-F_list = []
-for f in f_list:
-    F = shape_factor(f, f0, f_Delta, delta)
-    F_list.append(F)
-F_list = np.array(F_list)
-plt.plot(f_list, F_list, color='k', label="Shape factor")
-plt.xlabel("Frequency (GHz)")
-plt.ylabel("Shape factor")
-plt.title("Shape factor for oxygen and water vapour")
-plt.grid()
-plt.show()
-total_area = scipy.integrate.simps(F_list, f_list) # total area under the curve
-print(f"Total area under the curve: {total_area}")
-'''
-'''
-start_freq = 50 # GHz
-end_freq = 70 # GHz
-freq_list = np.linspace(start_freq, end_freq, 1000) # frequency in GHz
-altitude_list = np.array([0,5,10,15,20])
-gamma_list = np.zeros((len(altitude_list), len(freq_list))) # specific absorption in dB/km
-for i, h in enumerate(altitude_list):
-    for j, f in enumerate(freq_list):
-        T = standard_T(h)
-        P = standard_P(h)
-        rho = standard_rho(h)
-        gamma_list[i, j] = specific_absorption(f, T, P, rho)
 
-# plot
-plt.figure(figsize=(10, 5))
-for i, h in enumerate(altitude_list):
-    plt.plot(freq_list, gamma_list[i], label=f"{h} km")
-plt.xlabel("Frequency (GHz)")
-plt.ylabel("Specific absorption (dB/km)")
-plt.title("Specific absorption of oxygen")
-# set y axis to log scale
-plt.yscale("log")
-plt.xlim(start_freq, end_freq)
-plt.legend()
-plt.grid()
-plt.savefig("o2_specific_absorption_at_altitudes.png")
-plt.show()
-'''
 def total_attenuation(f, elevation_angle, initial_h=0, final_h=85, num_h=1000):
     '''
     Calculate the total attenuation in dB/km.
     f: frequency in GHz
     elevation_angle: elevation angle in radians 
+    initial_h: initial height in km (default 0)
+    final_h: final height in km (default 85)
     '''
     if elevation_angle < 0:
         raise ValueError("Elevation angle must be positive")
@@ -220,6 +169,15 @@ def total_attenuation(f, elevation_angle, initial_h=0, final_h=85, num_h=1000):
     gamma_list = np.array(gamma_list)
 
     return gamma_list
+
+def total_atten_integrated(f, elevation_angle, initial_h=0, final_h=85, num_h=1000):
+    h_list = np.linspace(initial_h, final_h, num_h) # height in km
+    gamma_list = total_attenuation(f, elevation_angle, initial_h, final_h, num_h)
+    # integrate the absorption over the path length
+    result = scipy.integrate.simpson(gamma_list, h_list) # integrate using Simpson's rule
+    return result # in dB
+
+#print(total_atten_integrated(30, 0.5, initial_h=np.floor(10005/1000.0), final_h=85.0, num_h=100))
 
 def standard_T_list(h_list):
     '''
@@ -241,59 +199,3 @@ def standard_rho_list(h_list):
     h: height in km
     '''
     return np.array([standard_rho(h) for h in h_list])
-
-'''
-# plot gamma
-h_list = np.linspace(0, 85, 100)
-plt.plot(h_list, total_attenuation(30, 0.5, initial_h=0, final_h=85, num_h=100), color='k', label="Total attenuation")
-plt.xlabel("Altitude (km)")
-plt.ylabel("Total specific attenuation (dB/km)")
-plt.title("Total specific attenuation at 30 GHz")
-plt.grid()
-plt.savefig("total_attenuation.png")
-plt.show()
-
-# plot temperature, pressure, and water vapour density for 0-85 km
-h_list = np.linspace(0, 85, 100)
-fig, axes = plt.subplots(3, 1, figsize=(10, 10))
-fig.suptitle("Standard atmosphere")
-axes[0].plot(h_list, standard_T_list(h_list), color='k', label="Temperature")
-axes[0].set_ylabel("Temperature (K)")
-#axes[0].set_xlabel("Altitude (km)")
-axes[0].grid()
-axes[1].plot(h_list, standard_P_list(h_list), color='k', label="Pressure")
-axes[1].set_ylabel("Pressure (hPa)")
-#axes[1].set_xlabel("Altitude (km)")
-axes[1].grid()
-axes[2].plot(h_list, standard_rho_list(h_list), color='k', label="Water vapour density")
-axes[2].set_ylabel("Water vapour density (g/m^3)")
-axes[2].set_xlabel("Altitude (km)")
-axes[2].grid()
-plt.tight_layout()
-plt.savefig("standard_atmosphere.png")
-plt.show()
-'''
-# plot specific absorption at standard atmosphere for 0-1000 GHz
-f_list = np.linspace(0, 1000, 1000) # frequency in GHz
-alts = np.array([0, 5, 10, 15, 20])
-gamma_list = np.zeros((len(alts), len(f_list))) # specific absorption in dB/km
-for i, h in enumerate(alts):
-    T = standard_T(h)
-    P = standard_P(h)
-    rho = standard_rho(h)
-    for j, f in enumerate(f_list):
-        gamma_list[i, j] = specific_absorption(f, T, P, rho) # specific absorption in dB/km
-# plot
-plt.figure(figsize=(10, 5))
-for i, h in enumerate(alts):
-    plt.plot(f_list, gamma_list[i], label=f"{h} km")
-plt.xlabel("Frequency (GHz)")
-plt.ylabel("Specific absorption (dB/km)")
-plt.title("Specific absorption of oxygen and water vapour")
-# set y axis to log scale
-plt.yscale("log")
-plt.xlim(0, 1000)
-plt.legend()
-plt.grid()
-plt.savefig("total_specific_absorption_at_altitudes.png")
-plt.show()

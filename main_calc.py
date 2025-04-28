@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import kml_gain_query as kgq
+#import kml_gain_query as kgq
+import L_atmos as la
 
 C_FREE_SPACE = 299792458.0 # m/s
 R_GEO = 42164000 # m
@@ -65,31 +66,21 @@ def noise_power_per_T(BW):
     '''
     return K_DBW_per_HZ_K + 10*np.log10(BW)
 
-def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, BW):
+def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f):
     ''' 
     using simple model for atmospheric loss
     ITU-R P.676-13
+    lat_gnd, lon_gnd, alt_gnd: ground station coordinates in radians and meter
+    lat_sat, lon_sat, alt_sat: satellite coordinates in radians and meter
+    f: frequency in Hz
+    returns: atmospheric loss in dB
     '''
-    # calculate the distance between the ground station and the satellite
-    x_gnd, y_gnd, z_gnd = geo_to_ECEF(lat_gnd, lon_gnd, alt_gnd)
-    x_sat, y_sat, z_sat = geo_to_ECEF(lat_sat, lon_sat, alt_sat)
-    d = dist(x_gnd, y_gnd, z_gnd, x_sat, y_sat, z_sat)
+    # convert units
+    f_ghz = f / 1e9 # GHz
+    alt_gnd_km = alt_gnd / 1000.0 # km
     # calculate the elevation angle
     elevation_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
-    # slant path length
-    # assume atmosphere has a height of 7 km
-    h = 10 # km
-    slant_path_length = h / np.sin(elevation_angle)
-    # specific attenuation in dB / km for oxygen and water vapour
-    # using ITU-R P.676-13 model
-    T = 15 + 273.15 # K
-    theta = 300 / T
-    water_vapour_density = 7.5 # g/m^3
-    water_partial_pressure = water_vapour_density * T / 216.7 # hPa
-    dry_air_pressure = 1013.25 # hPa
-    gamma_total = 0.1 # dB/km
-    # atmospheric loss in dB
-    L_atm = gamma_total * slant_path_length
+    L_atm = la.total_atten_integrated(f_ghz, elevation_angle, initial_h = alt_gnd_km) # dB
     return L_atm
 
 def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, BW):
@@ -126,12 +117,12 @@ def full_link_budget(
     L_atm_up = atmospheric_loss(
         Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
         sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_up, BW
+        f_up
     ) # dB, atmospheric loss in uplink
     L_atm_down = atmospheric_loss(
         Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
         sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_down, BW
+        f_down
     ) # dB, atmospheric loss in downlink
 
     noise = noise_power_per_T(BW) # dBW/K
@@ -210,8 +201,10 @@ if __name__ == "__main__":
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
     }
-    EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
-    GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    #EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    #GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    EIRP_sat = 63.0 # dBW
+    GT_sat = 18.0 # dB/K
     # satellite specs
     sat = {
         'lat': 0, # degrees
