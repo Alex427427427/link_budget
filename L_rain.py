@@ -1,320 +1,314 @@
-'''
-Created by alexander Li on 2025/04/29
-'''
 import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
-import pandas as pd
+#import kml_gain_query as kgq
+import L_atmos as la
+import L_rain as lr
 
-## DATA -------------------------------------------
-# rain coeffs
-rain_coeffs = {
-    "k_h": {
-        "a": [-5.33980, -0.35351, -0.23789, -0.94158],
-        "b": [-0.10008, 1.26970, 0.86036, 0.64552],
-        "c": [1.13098, 0.45400, 0.15354, 0.16817],
-        "mk": -0.18961,
-        "ck": 0.71147
-    },
-    "k_v": {
-        "a": [-3.80595, -3.44965, -0.39902, 0.50167],
-        "b": [0.56934, -0.22911, 0.73042, 1.07319],
-        "c": [0.81061, 0.51059, 0.11899, 0.27195],
-        "mk": -0.16398,
-        "ck": 0.63297
-    },
-    "alpha_h": {
-        "a": [-0.14318, 0.29591, 0.32177, -5.37610, 16.1721],
-        "b": [1.82442, 0.77564, 0.63773, -0.96230, -3.29980],
-        "c": [-0.55187, 0.19822, 0.13164, 1.47828, 3.43990],
-        "ma": 0.67849,
-        "ca": -1.95537
-    },
-    "alpha_v": {
-        "a": [-0.07771, 0.56727, -0.20238, -48.2991, 48.5833],
-        "b": [2.33840, 0.95545, 1.14520, 0.791669, 0.791459],
-        "c": [-0.76284, 0.54039, 0.26809, 0.116226, 0.116479],
-        "ma": -0.053739,
-        "ca": 0.83433
+C_FREE_SPACE = 299792458.0 # m/s
+R_GEO = 42164000 # m
+R_EQUATOR = 6378000 # m semi-major axis of earth
+R_POLAR = 6357000 # m semi-minor axis of earth
+ECCENTRICITY_EARTH = np.sqrt(1 - R_POLAR**2 / R_EQUATOR**2) # eccentricity of earth
+FLATTENING_EARTH = 1 - R_POLAR / R_EQUATOR
+K_DBW_per_HZ_K = -228.6 # Boltzmann's constant
+
+
+def dB_from_power(value):
+    return 10*np.log10(value)
+
+def dB_from_amplitude(value):
+    return 20*np.log10(value)
+
+def amplitude_from_dB(dB):
+    return 10**(dB/20.0)
+
+def power_from_dB(dB):
+    return 10**(dB/10.0)
+
+def geo_to_ECEF(lat, lon, alt):
+    '''
+    Converts geodetic coordinate (latitude, longitude, altitude) to Earth Centered Earth Fixed Coordinates (cartesian)
+    ''' 
+    prime_vertical_radius = R_EQUATOR / np.sqrt(1 - ECCENTRICITY_EARTH**2 * np.sin(lat)**2)
+    x = (prime_vertical_radius + alt)*np.cos(lat)*np.cos(lon)
+    y = (prime_vertical_radius + alt)*np.cos(lat)*np.sin(lon)
+    z = ((1-ECCENTRICITY_EARTH**2)*prime_vertical_radius + alt)*np.sin(lat)
+    return x, y, z
+
+def elevation(lat1, lon1, alt1, lat2, lon2, alt2):
+    '''
+    Elevation pointing from ground station to geo satellite
+    '''
+    x1, y1, z1 = geo_to_ECEF(lat1, lon1, alt1)
+    x2, y2, z2 = geo_to_ECEF(lat2, lon2, alt2)
+    # calculate the distance between the two points
+    d = dist(x1, y1, z1, x2, y2, z2)
+    # calculate the elevation angle using vector geometry
+    r1 = np.array([x1, y1, z1])
+    r2 = np.array([x2, y2, z2])
+    v = r2 - r1 
+    v_norm = np.linalg.norm(v)
+    v_unit = v / v_norm
+    r1_unit = r1 / np.linalg.norm(r1)
+    elevation_angle = np.arcsin(np.dot(v_unit, r1_unit))
+    return elevation_angle
+
+
+def dist(x1, y1, z1, x2, y2, z2):
+    return np.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+
+def FSPL(d, f):
+    return 20*np.log10(4*np.pi*d*f/C_FREE_SPACE)
+
+def noise_power_per_T(BW):
+    '''
+    BW: bandwidth in Hz
+    returns: power in dBW per K
+    '''
+    return K_DBW_per_HZ_K + 10*np.log10(BW)
+
+def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f):
+    ''' 
+    using simple model for atmospheric loss
+    ITU-R P.676-13
+    lat_gnd, lon_gnd, alt_gnd: ground station coordinates in radians and meter
+    lat_sat, lon_sat, alt_sat: satellite coordinates in radians and meter
+    f: frequency in Hz
+    returns: atmospheric loss in dB
+    '''
+    # convert units
+    f_ghz = f / 1e9 # GHz
+    alt_gnd_km = alt_gnd / 1000.0 # km
+    # calculate the elevation angle
+    elevation_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
+    L_atm = la.total_atten_integrated(f_ghz, elevation_angle, initial_h = alt_gnd_km) # dB
+    return L_atm
+
+def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, p_angle):
+    f_ghz = f/1e9
+    elev_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
+    rr = 10.0
+    return lr.rain_total_atten(f_ghz, rr, lat_gnd, lon_gnd, elev_angle, p_angle)
+
+def single_link_CNR(EIRP_tx, L_total, G_per_T_rx, noise_power_per_T):
+    return EIRP_tx - L_total + G_per_T_rx - noise_power_per_T
+
+def total_CNR(CNR_list):
+    sum_of_recip = 0.0
+    for CNR in CNR_list:
+        sum_of_recip += 10**(-CNR/10.0)
+    recip_of_sum = 1.0 / sum_of_recip
+    return 10*np.log10(recip_of_sum)
+
+def full_link_budget(
+        EIRP_Earth_start, Earth_start_lat_lon_alt, 
+        sat_lat_lon_alt, G_per_T_sat, EIRP_sat, 
+        Earth_end_lat_lon_alt, G_per_T_Earth_end, 
+        f_up, f_down, BW, bit_rate,
+        C_IM=10000
+    ):
+    '''
+    Calculates the receive power in dBW at the Earth_end terminal in the forward link (Earth_start -> sat -> Earth_end)
+    '''
+    Earth_start_x, Earth_start_y, Earth_start_z = geo_to_ECEF(Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2])
+    sat_x, sat_y, sat_z = geo_to_ECEF(sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2])
+    Earth_end_x, Earth_end_y, Earth_end_z = geo_to_ECEF(Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2])
+    dist_up = dist(Earth_start_x, Earth_start_y, Earth_start_z, sat_x, sat_y, sat_z)
+    dist_down = dist(sat_x, sat_y, sat_z, Earth_end_x, Earth_end_y, Earth_end_z)
+    L_up_path = FSPL(dist_up, f_up) # dB
+    L_down_path = FSPL(dist_down, f_down) # dB
+
+    L_atm_up = atmospheric_loss(
+        Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_up
+    ) # dB, atmospheric loss in uplink
+    L_atm_down = atmospheric_loss(
+        Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_down
+    ) # dB, atmospheric loss in downlink
+
+    L_rain_up = rain_loss(
+        Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_up, np.pi/4
+    )
+    L_rain_down = rain_loss(
+        Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_down, np.pi/4
+    )
+
+    noise = noise_power_per_T(BW) # dBW/K
+
+    L_up_total = L_up_path + L_atm_up + L_rain_up # dB
+    L_down_total = L_down_path + L_atm_down + L_rain_down # dB
+
+    uplink_CNR = single_link_CNR(EIRP_Earth_start, L_up_total, G_per_T_sat, noise) # dB
+    downlink_CNR = single_link_CNR(EIRP_sat, L_down_total, G_per_T_Earth_end, noise) # dB
+
+    # final results
+    total_CNR_dB = total_CNR([uplink_CNR, downlink_CNR, C_IM]) # dB
+    CNR_total_value = power_from_dB(total_CNR_dB) # linear value
+    CN0_total_value = CNR_total_value * BW # Hz
+    CN0_dB = dB_from_power(CN0_total_value) # dB-Hz
+    EbN0_total_value = CN0_total_value / bit_rate # dimensionless ratio
+    EbN0_dB = dB_from_power(EbN0_total_value) # dB
+
+    return {
+        'FSPL_up_dB': L_up_path,
+        'FSPL_down_dB': L_down_path,
+        'L_atm_up_dB': L_atm_up,
+        'L_atm_down_dB': L_atm_down,
+        'L_rain_up_dB': L_rain_up,
+        'L_rain_down_dB': L_rain_down,
+        'bit_rate_Mbps': bit_rate*10**(-6), # bps
+        'BW_MHz': BW*10**(-6), # Hz
+        'CNR_dB': total_CNR_dB,
+        'Eb/N0_dB': EbN0_dB,
     }
-}
-# rain heights
-Lat_grid = pd.read_csv("atmos_data\\rain_height_itu\\Lat.txt", sep="\\s+", header=None).to_numpy() # Y
-Lon_grid = pd.read_csv("atmos_data\\rain_height_itu\\Lon.txt", sep="\\s+", header=None).to_numpy() # X
-h0_grid = pd.read_csv("atmos_data\\rain_height_itu\\h0.txt", sep="\\s+", header=None).to_numpy() # Z
-Lat_list = Lat_grid[:,0].flatten()
-Lon_list = Lon_grid[0]
 
+# main code
+if __name__ == "__main__":
 
-## FUNCITONS -----------------------------------------------
-def linear_interp(x1, x2, q1, q2, x):
-    result = q1 + (x - x1)/(x2 - x1) * (q2 - q1)
-    return result
+    # MODCOD table
+    EbN0_table = np.array([
+        -5.36,-4.25,-3.31,-2.01,-0.78,0.09,1.02,1.67,2.17,0.729,3.19,3.41,1.849,3.139,2.949,4.579,4.189,5.919,6.209,5.009,
+        5.589,5.740,6.869,7.109,6.65,7.29,8.7,9.06
+    ])
+    MOD_table = np.array([
+        "QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","8PSK","QPSK","QPSK","8PSK","8PSK","16APSK","8PSK",
+        "16APSK","8PSK","8PSK","16APSK","16APSK","32APSK","16APSK",
+        "16APSK","32APSK","32APSK","32APSK","32APSK"
+    ])
+    COD_table = np.array([
+        "1/4","1/3","2/5","1/2",
+        "3/5","2/3","3/4","4/5","5/6","3/5","8/9","9/10","2/3","3/4","2/3","5/6","3/4","8/9",
+        "9/10","4/5","5/6","3/4","8/9","9/10","4/5","5/6","8/9","9/10"
+    ])
+    sorted_indices = np.argsort(EbN0_table)
+    EbN0_table = EbN0_table[sorted_indices]
+    MOD_table = MOD_table[sorted_indices]
+    COD_table = COD_table[sorted_indices]
 
-def bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, x, y):
-    """
-    Perform bilinear interpolation for a given point (x, y) within the rectangle defined by (x1, y1), (x2, y2).
+    # Communication specs
+    BW = 230e6 # bandwidth in Hz
+    BIT_RATE = 3e8 # bit rate in bps
+    F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
+    F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
+    F_UP_RETURN = 29.62e9 # uplink frequency in Hz
+    F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
+
+    # gateway specs
+    gate = {
+        'lat': 36, # degrees
+        'lon': 19, # degrees
+        'alt': 0.0, # meters
+        'PSD': 57.5e-6, # dBW/Hz
+        'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
+        'G/T': 38.2, # dB/K
+        'C/IM': 20.0 # dB
+    }
+    # user terminal specs
+    uterm = {
+        'lat': 36, # degrees
+        'lon': 19, # degrees
+        'alt': 0.3048 * 30000, # meters
+        'EIRP': 58.5, # dBW
+        'G/T': 15.0 # dB/K
+    }
+    #EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    #GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    EIRP_sat = 63.0 # dBW
+    GT_sat = 18.0 # dB/K
+    # satellite specs
+    sat = {
+        'lat': 0, # degrees
+        'lon': 31.0, # degrees
+        'alt': R_GEO - R_EQUATOR, # meters
+        'EIRP': EIRP_sat, # dBW
+        'G/T': GT_sat # dB/K
+    }
     
-    Parameters:
-    x1, x2 : float
-        The x-coordinates of the rectangle's corners.
-    y1, y2 : float
-        The y-coordinates of the rectangle's corners.
-    q11, q12, q21, q22 : float
-        The values at the corners of the rectangle.
-    x : float
-        The x-coordinate of the point to interpolate.
-    y : float
-        The y-coordinate of the point to interpolate.
-
-    Returns:
-    float
-        The interpolated value at (x, y).
-    """
-    if x1 == x2 or y1 == y2:
-        raise ValueError("x1, x2 and y1, y2 must be different")
-    if x < x1 or x > x2 or y < y1 or y > y2:
-        raise ValueError("x and y must be within the rectangle defined by (x1, y1), (x2, y2)")
-    
-    
-    result = ((x2-x)*(y2-y))/((x2-x1)*(y2-y1)) * q11 + \
-                ((x-x1)*(y2-y))/((x2-x1)*(y2-y1)) * q21 + \
-                ((x2-x)*(y-y1))/((x2-x1)*(y2-y1)) * q12 + \
-                ((x-x1)*(y-y1))/((x2-x1)*(y2-y1)) * q22
-    
-    #result = 0
-    return result
-
-def binary_search(array, item):
-    '''
-    input: array - np array sorted
-    item: item to be searched for that is not inside the array
-    return the index of the closest item in the array lower than the item
-    '''
-    left_id = 0
-    right_id = len(array)-1
-    if item == array[-1]:
-        return right_id
-    elif item == array[0]:
-        return left_id
-
-    while left_id < right_id:
-        mid_id = (left_id + right_id) // 2
-        mid_item = array[mid_id]
-        if mid_item == item:
-            return mid_id
-        elif mid_item < item:
-            left_id = mid_id
-        elif mid_item > item:
-            right_id = mid_id
-    return None
-
-def inexact_binary_search(array, item):
-    '''
-    input: array - np array sorted
-    item: item to be searched for that is not inside the array
-    return the index of the closest item in the array lower than the item, and whether an exact match was found
-    '''
-    left_id = 0
-    right_id = len(array)-1
-    if item == array[-1]:
-        return right_id, True
-    elif item == array[0]:
-        return left_id, True
-
-    while left_id < right_id:
-        mid_id = (left_id + right_id) // 2
-        mid_item = array[mid_id]
-        next_item = array[mid_id + 1]
-        if mid_item == item:
-            return mid_id, True
-        if mid_item < item and next_item > item:
-            return mid_id, False
-        elif mid_item < item:
-            left_id = mid_id
-        elif mid_item > item:
-            right_id = mid_id
-    return None, None
-
-def rain_height_lookup(lat_deg, lon_deg):
-    # returns height in km
-    # convert lat to within +/- 90
-    # convert lon to within 0 to 360
-    while lon_deg > 360.0:
-        lon_deg -= 360
-    while lon_deg < 0.0:
-        lon_deg += 360
-    if lat_deg > 90.0 or lat_deg < -90.0:
-        raise ValueError("latitude must be within -90.0 and +90.0 degrees.")
-    
-    # search the rows until the latitude is found
-    ascending_lat_list = np.flip(Lat_list)
-    lat_id, exact_lat = inexact_binary_search(ascending_lat_list, lat_deg)
-    lat_id = len(Lat_list)-1-lat_id # flip it back to descending order
-    lon_id, exact_lon = inexact_binary_search(Lon_list, lon_deg)
-    if exact_lat and exact_lon:
-        return h0_grid[lat_id, lon_id]
-    elif exact_lat:
-        q1 = h0_grid[lat_id, lon_id]
-        q2 = h0_grid[lat_id, lon_id+1]
-        x1 = Lon_list[lon_id]
-        x2 = Lon_list[lon_id+1]
-        x = lon_deg
-        return linear_interp(x1, x2, q1, q2, x)
-    elif exact_lon:
-        q1 = h0_grid[lat_id, lon_id]
-        q2 = h0_grid[lat_id-1, lon_id]
-        y1 = Lat_list[lat_id]
-        y2 = Lat_list[lat_id-1]
-        y = lat_deg
-        return linear_interp(y1, y2, q1, q2, y)
+    if sat['EIRP'] is None or sat['G/T'] is None:
+        print("No link found for the given coordinates.")
     else:
-        x1 = Lon_list[lon_id]
-        x2 = Lon_list[lon_id+1]
-        y1 = Lat_list[lat_id]
-        y2 = Lat_list[lat_id-1]
-        q11 = h0_grid[lat_id, lon_id]
-        q12 = h0_grid[lat_id-1, lon_id]
-        q21 = h0_grid[lat_id, lon_id+1]
-        q22 = h0_grid[lat_id-1, lon_id+1]
-        x = lon_deg
-        y = lat_deg
-        #print(x1, x2, y1, y2, q11, q12, q21, q22, x, y)
-        return bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, x, y) + 0.36
-    
+        forward_results = full_link_budget(
+            EIRP_Earth_start=gate['EIRP'], # dBW
+            Earth_start_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+            G_per_T_sat=sat['G/T'], # dB/K
+            EIRP_sat=sat['EIRP'], # dBW
+            Earth_end_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+            G_per_T_Earth_end=uterm['G/T'], # dB/K
+            f_up=F_UP_FORWARD, # frequency in Hz
+            f_down=F_DOWN_FORWARD, # frequency in Hz
+            BW=BW, # bandwidth in Hz
+            bit_rate=BIT_RATE, # bit rate in bps
+            C_IM=gate['C/IM'] # dB
+        )
 
-def k_calc(f, polarisation):
-    '''
-    calculate a parameter k in the rain attenuation model
-    f: frequency in GHz
-    polarisation: str, either 'h' for horizontal or 'v' for vertical polarisation 
-    '''
-    if polarisation not in ['h', 'v']:
-        raise ValueError("Polarisation must be either 'h' or 'v'")
-    if f < 0:
-        raise ValueError("Frequency must be positive")
-    # read coefficients from the dictionary
-    if polarisation == 'h':
-        a_list = np.array(rain_coeffs["k_h"]["a"])
-        b_list = np.array(rain_coeffs["k_h"]["b"])
-        c_list = np.array(rain_coeffs["k_h"]["c"])
-        mk = rain_coeffs["k_h"]["mk"]
-        ck = rain_coeffs["k_h"]["ck"]
-    elif polarisation == 'v':
-        a_list = np.array(rain_coeffs["k_v"]["a"])
-        b_list = np.array(rain_coeffs["k_v"]["b"])
-        c_list = np.array(rain_coeffs["k_v"]["c"])
-        mk = rain_coeffs["k_v"]["mk"]
-        ck = rain_coeffs["k_v"]["ck"]
-    # calculate
-    l10k = ck + mk*np.log10(f) + np.sum(
-        a_list*np.exp(-((np.log10(f)-b_list)/c_list)**2)
-    )
-    k = 10**l10k
-    return k
+        return_results = full_link_budget(
+            EIRP_Earth_start=uterm['EIRP'], # dBW
+            Earth_start_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+            G_per_T_sat=sat['G/T'], # dB/K
+            EIRP_sat=sat['EIRP'], # dBW
+            Earth_end_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+            G_per_T_Earth_end=gate['G/T'], # dB/K
+            f_up=F_UP_RETURN, # frequency in Hz
+            f_down=F_DOWN_RETURN, # frequency in Hz
+            BW=BW, # bandwidth in Hz
+            bit_rate=BIT_RATE, # bit rate in bps
+            C_IM=gate['C/IM'] # dB
+        )
 
-def alpha_calc(f, polarisation):
-    '''
-    calculate a parameter alpha in the rain attenuation model
-    f: frequency in GHz
-    polarisation: str, either 'h' for horizontal or 'v' for vertical polarisation 
-    '''
-    if polarisation not in ['h', 'v']:
-        raise ValueError("Polarisation must be either 'h' or 'v'")
-    if f < 0:
-        raise ValueError("Frequency must be positive")
-    # read coefficients from the dictionary
-    if polarisation == 'h':
-        a_list = np.array(rain_coeffs["alpha_h"]["a"])
-        b_list = np.array(rain_coeffs["alpha_h"]["b"])
-        c_list = np.array(rain_coeffs["alpha_h"]["c"])
-        ma = rain_coeffs["alpha_h"]["ma"]
-        ca = rain_coeffs["alpha_h"]["ca"]
-    elif polarisation == 'v':
-        a_list = np.array(rain_coeffs["alpha_v"]["a"])
-        b_list = np.array(rain_coeffs["alpha_v"]["b"])
-        c_list = np.array(rain_coeffs["alpha_v"]["c"])
-        ma = rain_coeffs["alpha_v"]["ma"]
-        ca = rain_coeffs["alpha_v"]["ca"]
-    # calculate
-    alpha = ca + ma*np.log10(f) + np.sum(
-        a_list*np.exp(-((np.log10(f)-b_list)/c_list)**2)
-    )
-    return alpha
+        print("\nLink Budget Calculation Results")
+        print("=====================================")
 
-def rain_spec_atten(f, rr, elev_angle=np.pi/2, p_angle=np.pi/4):
-    """
-    Calculate the specific attenuation due to rain for a given frequency and rain rate.
-    
-    Parameters:
-    f : float
-        Frequency in GHz.
-    rr : float
-        Rain rate in mm/h.
-    p_angle : float
-        Polarization angle in radians (default is pi/4 for circular polarization). Must be between 0 and pi/2.
-    elev_angle : float
-        Elevation angle in radians (default is pi/2 for vertical polarization). Must be between 0 and pi/2.
+        print("Forward Link: ")
+        print("=====================================")
+        for k, v in forward_results.items():
+            print(f"{k}: {v}")
 
-    Returns:
-    float
-        Specific attenuation in dB/km.
-    """
-    if f < 0 or rr < 0:
-        raise ValueError("Frequency and rain rate must be positive")
-    if p_angle < 0 or p_angle > np.pi/2:
-        raise ValueError("Polarization angle must be between 0 and pi/2")
-    if elev_angle < 0 or elev_angle > np.pi/2:
-        raise ValueError("Elevation angle must be between 0 and pi/2")
-    if elev_angle == 0:
-        raise ValueError("Elevation angle must be greater than 0")
-    
-    kh = k_calc(f, 'h')
-    kv = k_calc(f, 'v')
-    alpha_h = alpha_calc(f, 'h')
-    alpha_v = alpha_calc(f, 'v')
-    k = (kh + kv + (kh-kv)*np.cos(elev_angle)**2 * np.cos(2*p_angle))/2
-    alpha = (kh*alpha_h + kv*alpha_v + (kh*alpha_h - kv*alpha_v)*np.cos(elev_angle)**2 * np.cos(2*p_angle))/(2*k)
-    # Calculate specific attenuation
-    gamma = k * rr**alpha
-    return gamma
+        print("\n")
+        
+        print("Return Link: ")
+        print("=====================================")
+        for k, v in return_results.items():
+            print(f"{k}: {v}")
 
-def rain_total_atten(f, rr, gnd_lat_rad, gnd_lon_rad, elev_angle=np.pi/2, p_angle=np.pi/4):
-    if elev_angle <= 0.0:
-        raise ValueError("elevation angle must be positive.")
-    gnd_lat_deg = gnd_lat_rad * 180.0 / np.pi
-    gnd_lon_deg = gnd_lon_rad * 180.0 / np.pi
-    gamma = rain_spec_atten(f, rr, elev_angle, p_angle)
-    rain_height = rain_height_lookup(gnd_lat_deg, gnd_lon_deg)
-    slant_path_length = rain_height / np.sin(elev_angle)
-    return gamma*slant_path_length
+        # given the Eb/N0, find the MODCOD
+        forward_EbN0 = forward_results['Eb/N0_dB']
+        return_EbN0 = return_results['Eb/N0_dB']
+        if forward_EbN0 < EbN0_table[0]:
+            forward_MOD = "None"
+            forward_COD = "None"
+        elif forward_EbN0 > EbN0_table[-1]:
+            forward_MOD = MOD_table[-1]
+            forward_COD = COD_table[-1]
+        else:
+            forward_MOD = MOD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
+            forward_COD = COD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
+        if return_EbN0 < EbN0_table[0]:
+            return_MOD = "None"
+            return_COD = "None"
+        elif return_EbN0 > EbN0_table[-1]:
+            return_MOD = MOD_table[-1]
+            return_COD = COD_table[-1]
+        else:
+            return_MOD = MOD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
+            return_COD = COD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
 
-'''
-# visualise the bilinear interpolation
-x1 = 0
-x2 = 10
-y1 = 0
-y2 = 5
-q11 = 1
-q12 = 1
-q21 = 1
-q22 = 4
-x = np.linspace(x1, x2, 100)
-y = np.linspace(y1, y2, 100)
-X, Y = np.meshgrid(x, y)
-print(X)
-Z = np.zeros(X.shape)
-for i in range(X.shape[0]):
-    for j in range(X.shape[1]):
-        Z[i, j] = bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, X[i, j], Y[i, j])
-plt.figure(figsize=(10, 10))
-plt.contourf(X, Y, Z, levels=100, cmap='viridis')
-plt.colorbar(label='Interpolated Value')
-plt.title('Bilinear Interpolation')
-plt.xlabel('X-axis')
-plt.ylabel('Y-axis')
-plt.scatter([x1, x2], [y1, y2], color='red', label='Corners')
-plt.scatter([x1, x2], [y1, y2], color='red', label='Corners')
-plt.legend()
-plt.show()
-'''
+        print("\n")
+        print("Forward Link MODCOD: ")
+        print("=====================================")
+        print(f"MOD: {forward_MOD}")
+        print(f"COD: {forward_COD}")
+        print("\n")
+        print("Return Link MODCOD: ")
+        print("=====================================")
+        print(f"MOD: {return_MOD}")
+        print(f"COD: {return_COD}")
+        print("\n")
