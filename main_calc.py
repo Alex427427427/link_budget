@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 #import kml_gain_query as kgq
 import L_atmos as la
+import L_rain as lr
 
 C_FREE_SPACE = 299792458.0 # m/s
 R_GEO = 42164000 # m
@@ -83,8 +84,11 @@ def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f):
     L_atm = la.total_atten_integrated(f_ghz, elevation_angle, initial_h = alt_gnd_km) # dB
     return L_atm
 
-def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, BW):
-    return 0.0
+def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, p_angle):
+    f_ghz = f/1e9
+    elev_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
+    rr = 10.0
+    return lr.rain_total_atten(f_ghz, rr, lat_gnd, lon_gnd, elev_angle, p_angle)
 
 def single_link_CNR(EIRP_tx, L_total, G_per_T_rx, noise_power_per_T):
     return EIRP_tx - L_total + G_per_T_rx - noise_power_per_T
@@ -125,10 +129,21 @@ def full_link_budget(
         f_down
     ) # dB, atmospheric loss in downlink
 
+    L_rain_up = rain_loss(
+        Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_up, np.pi/4
+    )
+    L_rain_down = rain_loss(
+        Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
+        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+        f_down, np.pi/4
+    )
+
     noise = noise_power_per_T(BW) # dBW/K
 
-    L_up_total = L_up_path + L_atm_up # dB
-    L_down_total = L_down_path + L_atm_down # dB
+    L_up_total = L_up_path + L_atm_up + L_rain_up # dB
+    L_down_total = L_down_path + L_atm_down + L_rain_down # dB
 
     uplink_CNR = single_link_CNR(EIRP_Earth_start, L_up_total, G_per_T_sat, noise) # dB
     downlink_CNR = single_link_CNR(EIRP_sat, L_down_total, G_per_T_Earth_end, noise) # dB
@@ -146,6 +161,8 @@ def full_link_budget(
         'FSPL_down_dB': L_down_path,
         'L_atm_up_dB': L_atm_up,
         'L_atm_down_dB': L_atm_down,
+        'L_rain_up_dB': L_rain_up,
+        'L_rain_down_dB': L_rain_down,
         'bit_rate_Mbps': bit_rate*10**(-6), # bps
         'BW_MHz': BW*10**(-6), # Hz
         'CNR_dB': total_CNR_dB,
