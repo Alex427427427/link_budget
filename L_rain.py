@@ -3,7 +3,11 @@ Created by alexander Li on 2025/04/29
 '''
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import pandas as pd
 
+## DATA -------------------------------------------
+# rain coeffs
 rain_coeffs = {
     "k_h": {
         "a": [-5.33980, -0.35351, -0.23789, -0.94158],
@@ -34,6 +38,18 @@ rain_coeffs = {
         "ca": 0.83433
     }
 }
+# rain heights
+Lat_grid = pd.read_csv("atmos_data\\rain_height_itu\\Lat.txt", sep="\\s+", header=None).to_numpy() # Y
+Lon_grid = pd.read_csv("atmos_data\\rain_height_itu\\Lon.txt", sep="\\s+", header=None).to_numpy() # X
+h0_grid = pd.read_csv("atmos_data\\rain_height_itu\\h0.txt", sep="\\s+", header=None).to_numpy() # Z
+Lat_list = Lat_grid[:,0].flatten()
+Lon_list = Lon_grid[0]
+
+
+## FUNCITONS -----------------------------------------------
+def linear_interp(x1, x2, q1, q2, x):
+    result = q1 + (x - x1)/(x2 - x1) * (q2 - q1)
+    return result
 
 def bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, x, y):
     """
@@ -66,7 +82,106 @@ def bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, x, y):
                 ((x2-x)*(y-y1))/((x2-x1)*(y2-y1)) * q12 + \
                 ((x-x1)*(y-y1))/((x2-x1)*(y2-y1)) * q22
     
-    return result 
+    #result = 0
+    return result
+
+def binary_search(array, item):
+    '''
+    input: array - np array sorted
+    item: item to be searched for that is not inside the array
+    return the index of the closest item in the array lower than the item
+    '''
+    left_id = 0
+    right_id = len(array)-1
+    if item == array[-1]:
+        return right_id
+    elif item == array[0]:
+        return left_id
+
+    while left_id < right_id:
+        mid_id = (left_id + right_id) // 2
+        mid_item = array[mid_id]
+        if mid_item == item:
+            return mid_id
+        elif mid_item < item:
+            left_id = mid_id
+        elif mid_item > item:
+            right_id = mid_id
+    return None
+
+def inexact_binary_search(array, item):
+    '''
+    input: array - np array sorted
+    item: item to be searched for that is not inside the array
+    return the index of the closest item in the array lower than the item, and whether an exact match was found
+    '''
+    left_id = 0
+    right_id = len(array)-1
+    if item == array[-1]:
+        return right_id, True
+    elif item == array[0]:
+        return left_id, True
+
+    while left_id < right_id:
+        mid_id = (left_id + right_id) // 2
+        mid_item = array[mid_id]
+        next_item = array[mid_id + 1]
+        if mid_item == item:
+            return mid_id, True
+        if mid_item < item and next_item > item:
+            return mid_id, False
+        elif mid_item < item:
+            left_id = mid_id
+        elif mid_item > item:
+            right_id = mid_id
+    return None, None
+
+def rain_height_lookup(lat_deg, lon_deg):
+    # returns height in km
+    # convert lat to within +/- 90
+    # convert lon to within 0 to 360
+    while lon_deg > 360.0:
+        lon_deg -= 360
+    while lon_deg < 0.0:
+        lon_deg += 360
+    if lat_deg > 90.0 or lat_deg < -90.0:
+        raise ValueError("latitude must be within -90.0 and +90.0 degrees.")
+    
+    # search the rows until the latitude is found
+    ascending_lat_list = np.flip(Lat_list)
+    lat_id, exact_lat = inexact_binary_search(ascending_lat_list, lat_deg)
+    lat_id = len(Lat_list)-1-lat_id # flip it back to descending order
+    lon_id, exact_lon = inexact_binary_search(Lon_list, lon_deg)
+    if exact_lat and exact_lon:
+        return h0_grid[lat_id, lon_id]
+    elif exact_lat:
+        q1 = h0_grid[lat_id, lon_id]
+        q2 = h0_grid[lat_id, lon_id+1]
+        x1 = Lon_list[lon_id]
+        x2 = Lon_list[lon_id+1]
+        x = lon_deg
+        return linear_interp(x1, x2, q1, q2, x)
+    elif exact_lon:
+        q1 = h0_grid[lat_id, lon_id]
+        q2 = h0_grid[lat_id-1, lon_id]
+        y1 = Lat_list[lat_id]
+        y2 = Lat_list[lat_id-1]
+        y = lat_deg
+        return linear_interp(y1, y2, q1, q2, y)
+    else:
+        x1 = Lon_list[lon_id]
+        x2 = Lon_list[lon_id+1]
+        y1 = Lat_list[lat_id]
+        y2 = Lat_list[lat_id-1]
+        q11 = h0_grid[lat_id, lon_id]
+        q12 = h0_grid[lat_id-1, lon_id]
+        q21 = h0_grid[lat_id, lon_id+1]
+        q22 = h0_grid[lat_id-1, lon_id+1]
+        x = lon_deg
+        y = lat_deg
+        #print(x1, x2, y1, y2, q11, q12, q21, q22, x, y)
+        return bilinear_interp(x1, x2, y1, y2, q11, q12, q21, q22, x, y) + 0.36
+    
 
 def k_calc(f, polarisation):
     '''
@@ -163,6 +278,16 @@ def rain_spec_atten(f, rr, elev_angle=np.pi/2, p_angle=np.pi/4):
     # Calculate specific attenuation
     gamma = k * rr**alpha
     return gamma
+
+def rain_total_atten(f, rr, gnd_lat_rad, gnd_lon_rad, elev_angle=np.pi/2, p_angle=np.pi/4):
+    if elev_angle <= 0.0:
+        raise ValueError("elevation angle must be positive.")
+    gnd_lat_deg = gnd_lat_rad * 180.0 / np.pi
+    gnd_lon_deg = gnd_lon_rad * 180.0 / np.pi
+    gamma = rain_spec_atten(f, rr, elev_angle, p_angle)
+    rain_height = rain_height_lookup(gnd_lat_deg, gnd_lon_deg)
+    slant_path_length = rain_height / np.sin(elev_angle)
+    return gamma*slant_path_length
 
 '''
 # visualise the bilinear interpolation
