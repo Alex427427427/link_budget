@@ -57,6 +57,8 @@ def RT_lookup(lat_deg, lon_deg, month):
     return RT
 
 def p_exceed_rr_ref(rr_ref, rr_nom, p0):
+    if rr_ref == 0:
+        return p0
     x = (
         np.log(rr_ref) + 0.7938 - np.log(rr_nom)
     ) / 1.26
@@ -91,6 +93,16 @@ def rain_nominal_arrays(lat_deg, lon_deg):
 def p_annual(p0_list):
     return np.sum(N_days_monthly*p0_list) / 365.25
 
+def px_annual(rr_t, p0_array, rr_nom_array):
+    px_array = np.zeros(len(month_indices))
+    for m in range(len(month_indices)):
+        N = N_days_monthly[m]
+        rr_nom = rr_nom_array[m]
+        p0 = p0_array[m]
+        px_array[m] = p_exceed_rr_ref(rr_t, rr_nom, p0)
+    px_ann = p_annual(px_array)
+    return px_ann
+
 def rr_upper_bound(lat_rad, lon_rad, p_rain_desired):
     '''
     returns the rain rate that would be exceeded for p_rain_desired portion of the year. 
@@ -109,25 +121,14 @@ def rr_upper_bound(lat_rad, lon_rad, p_rain_desired):
     # adjust the rr_threshold until the probability we calculate is equal to the desired. 
     rr_t = 0.0
     px_ann = p0_ann # px_ann = annual probability of rr exceeding the rr_threshold
-    px_array = np.zeros(len(month_indices))
     adjustment_rate = 1.0
     iter = 0
     while 100*np.abs(px_ann / p_rain_desired - 1) >= 0.001:
         # adjust the rain rate
         rr_t += adjustment_rate * np.log(px_ann / p_rain_desired)
+        px_ann = px_annual(rr_t, p0_array, rr_nom_array)
 
-        # for every month, recalculate
-        for m in range(len(month_indices)):
-            N = N_days_monthly[m]
-            rr_nom = rr_nom_array[m]
-            p0 = p0_array[m]
-            px_array[m] = p_exceed_rr_ref(rr_t, rr_nom, p0)
-        # calculate new px annual
-        px_ann = p_annual(px_array)
-
-        print(f"px_ann: {px_ann}; rr_t: {rr_t}")
-
-        if iter > 1000:
+        if iter > 10000:
             raise Exception("Too long. Could be infinite loop.")
     return rr_t
 
