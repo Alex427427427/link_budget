@@ -43,25 +43,11 @@ plt.tight_layout()
 plt.savefig("plots\\rain_attenuation_coefficients.png")
 plt.show()
 
-# Plot rain total atten over rain rate
-rr_list = np.linspace(0, 50, 50)
-gamma_list = np.zeros(len(rr_list))
-for i, rr in enumerate(rr_list):
-    gamma = rain_total_atten(30.0, rr, 35.1*np.pi/180.0, 100.0*np.pi/180.0, np.pi/2, np.pi/4)
-    gamma_list[i] = gamma
-plt.plot(rr_list, gamma_list, color='k')
-plt.xlabel("rain rate [mm/h]")
-plt.ylabel("$\\gamma$ [dB/km]")
-plt.title("rain specific attenuation over rain rate")
-plt.savefig("plots\\rain_atten_over_rr.png")
-plt.show()
-
-
 
 
 ## Plot the rain height map
-Y = Lat_grid
-X = Lon_grid
+Y = lat_grid_rain_height
+X = lon_grid_rain_height
 Z = h0_grid
 plt.figure(figsize=(10,5))
 plt.pcolormesh(X, Y, Z, cmap="YlGnBu")
