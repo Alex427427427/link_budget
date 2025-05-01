@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 #import kml_gain_query as kgq
 import L_atmos as la
 import L_rain as lr
+import modcod_select as ms
+import rain_rate as rrb
 
 C_FREE_SPACE = 299792458.0 # m/s
 R_GEO = 42164000 # m
@@ -84,10 +86,9 @@ def atmospheric_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f):
     L_atm = la.total_atten_integrated(f_ghz, elevation_angle, initial_h = alt_gnd_km) # dB
     return L_atm
 
-def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, p_angle):
+def rain_loss(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat, f, p_angle, rr=10.0):
     f_ghz = f/1e9
     elev_angle = elevation(lat_gnd, lon_gnd, alt_gnd, lat_sat, lon_sat, alt_sat)
-    rr = 10.0
     return lr.rain_total_atten(f_ghz, rr, lat_gnd, lon_gnd, elev_angle, p_angle)
 
 def single_link_CNR(EIRP_tx, L_total, G_per_T_rx, noise_power_per_T):
@@ -105,6 +106,7 @@ def full_link_budget(
         sat_lat_lon_alt, G_per_T_sat, EIRP_sat, 
         Earth_end_lat_lon_alt, G_per_T_Earth_end, 
         f_up, f_down, BW, bit_rate,
+        link_reliability=0.999, # link reliability
         C_IM=10000
     ):
     '''
@@ -129,15 +131,18 @@ def full_link_budget(
         f_down
     ) # dB, atmospheric loss in downlink
 
+    p_rain = 1 - link_reliability # probability of rain = 0.1% of time
+    rr_up = rrb.rr_upper_bound(Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], p_rain) # mm/h
+    rr_down = rrb.rr_upper_bound(Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], p_rain) # mm/h
     L_rain_up = rain_loss(
         Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
         sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_up, np.pi/4
+        f_up, np.pi/4, rr_up
     )
     L_rain_down = rain_loss(
         Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
         sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_down, np.pi/4
+        f_down, np.pi/4, rr_down
     )
 
     noise = noise_power_per_T(BW) # dBW/K
@@ -172,26 +177,6 @@ def full_link_budget(
 # main code
 if __name__ == "__main__":
 
-    # MODCOD table
-    EbN0_table = np.array([
-        -5.36,-4.25,-3.31,-2.01,-0.78,0.09,1.02,1.67,2.17,0.729,3.19,3.41,1.849,3.139,2.949,4.579,4.189,5.919,6.209,5.009,
-        5.589,5.740,6.869,7.109,6.65,7.29,8.7,9.06
-    ])
-    MOD_table = np.array([
-        "QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","QPSK","8PSK","QPSK","QPSK","8PSK","8PSK","16APSK","8PSK",
-        "16APSK","8PSK","8PSK","16APSK","16APSK","32APSK","16APSK",
-        "16APSK","32APSK","32APSK","32APSK","32APSK"
-    ])
-    COD_table = np.array([
-        "1/4","1/3","2/5","1/2",
-        "3/5","2/3","3/4","4/5","5/6","3/5","8/9","9/10","2/3","3/4","2/3","5/6","3/4","8/9",
-        "9/10","4/5","5/6","3/4","8/9","9/10","4/5","5/6","8/9","9/10"
-    ])
-    sorted_indices = np.argsort(EbN0_table)
-    EbN0_table = EbN0_table[sorted_indices]
-    MOD_table = MOD_table[sorted_indices]
-    COD_table = COD_table[sorted_indices]
-
     # Communication specs
     BW = 230e6 # bandwidth in Hz
     BIT_RATE = 3e8 # bit rate in bps
@@ -199,6 +184,8 @@ if __name__ == "__main__":
     F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
     F_UP_RETURN = 29.62e9 # uplink frequency in Hz
     F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
+    link_reliability = 0.999
+    
 
     # gateway specs
     gate = {
@@ -282,24 +269,8 @@ if __name__ == "__main__":
         # given the Eb/N0, find the MODCOD
         forward_EbN0 = forward_results['Eb/N0_dB']
         return_EbN0 = return_results['Eb/N0_dB']
-        if forward_EbN0 < EbN0_table[0]:
-            forward_MOD = "None"
-            forward_COD = "None"
-        elif forward_EbN0 > EbN0_table[-1]:
-            forward_MOD = MOD_table[-1]
-            forward_COD = COD_table[-1]
-        else:
-            forward_MOD = MOD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
-            forward_COD = COD_table[np.where(EbN0_table >= forward_EbN0)[0][0]-1]
-        if return_EbN0 < EbN0_table[0]:
-            return_MOD = "None"
-            return_COD = "None"
-        elif return_EbN0 > EbN0_table[-1]:
-            return_MOD = MOD_table[-1]
-            return_COD = COD_table[-1]
-        else:
-            return_MOD = MOD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
-            return_COD = COD_table[np.where(EbN0_table >= return_EbN0)[0][0]-1]
+        forward_MOD, forward_COD = ms.modcod_select(forward_EbN0)
+        return_MOD, return_COD = ms.modcod_select(return_EbN0)
 
         print("\n")
         print("Forward Link MODCOD: ")
