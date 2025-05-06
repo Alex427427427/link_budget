@@ -186,14 +186,14 @@ if __name__ == "__main__":
     F_UP_RETURN = 29.62e9 # uplink frequency in Hz
     F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
     link_reliability = 0.999
-    link_margin = 10.0 # dB
+    link_margin = 0.0 # dB
     roll_off = 0.1 
     
 
     # gateway specs
     gate = {
-        'lat': 36, # degrees
-        'lon': 19, # degrees
+        'lat': 44.7, # degrees
+        'lon': 81.4, # degrees
         'alt': 0.0, # meters
         'PSD': 57.5e-6, # dBW/Hz
         'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
@@ -202,8 +202,8 @@ if __name__ == "__main__":
     }
     # user terminal specs
     uterm = {
-        'lat': 36, # degrees
-        'lon': 19, # degrees
+        'lat': 45, # degrees
+        'lon': 80, # degrees
         'alt': 0.3048 * 30000, # meters
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
@@ -260,14 +260,14 @@ if __name__ == "__main__":
         print("Forward Link: ")
         print("=====================================")
         for k, v in forward_results.items():
-            print(f"{k}: {v}")
+            print(f"{k}: {v:.2f}")
 
         print("\n")
         
         print("Return Link: ")
         print("=====================================")
         for k, v in return_results.items():
-            print(f"{k}: {v}")
+            print(f"{k}: {v:.2f}")
 
         # given the Eb/N0, find the MODCOD
         forward_CN0 = forward_results['CN0_dB']
@@ -289,16 +289,16 @@ if __name__ == "__main__":
         print("=====================================")
         print(f"MOD: {forward_MOD}")
         print(f"COD: {forward_COD}")
-        print(f"link margin: {link_margin} dB")
-        print(f"bitrate: {forward_bitrate} bps")
-        print(f"Eb/N0: {forward_EbN0} dB")
+        print(f"link margin: {link_margin:.2f} dB")
+        print(f"bitrate: {forward_bitrate/1e6:.2f} Mbps")
+        print(f"Eb/N0: {forward_EbN0:.2f} dB")
         print("\n")
         print("Return Link MODCOD: ")
         print("=====================================")
         print(f"MOD: {return_MOD}")
         print(f"COD: {return_COD}")
-        print(f"link margin: {link_margin} dB")
-        print(f"bitrate: {return_bitrate} bps")
-        print(f"Eb/N0: {return_EbN0} dB")
+        print(f"link margin: {link_margin:.2f} dB")
+        print(f"bitrate: {return_bitrate/1e6:.2f} Mbps")
+        print(f"Eb/N0: {return_EbN0:.2f} dB")
 
         print("\n")
