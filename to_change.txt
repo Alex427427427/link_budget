@@ -1,0 +1,4 @@
+- Enforce all longitude to be within [-180, 180].
+- Fix all paths to be pathlib.Path
+- Consider implementing classes
+- Rework repo structure
