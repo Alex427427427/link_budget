@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-#import kml_gain_query as kgq
+import kml_gain_query as kgq
 import L_atmos as la
 import L_rain as lr
 import modcod_select as ms
@@ -105,7 +105,7 @@ def full_link_budget(
         EIRP_Earth_start, Earth_start_lat_lon_alt, 
         sat_lat_lon_alt, G_per_T_sat, EIRP_sat, 
         Earth_end_lat_lon_alt, G_per_T_Earth_end, 
-        f_up, f_down, BW, bit_rate,
+        f_up, f_down, BW, 
         link_reliability=0.999, # link reliability
         C_IM=10000
     ):
@@ -158,8 +158,8 @@ def full_link_budget(
     CNR_total_value = power_from_dB(total_CNR_dB) # linear value
     CN0_total_value = CNR_total_value * BW # Hz
     CN0_dB = dB_from_power(CN0_total_value) # dB-Hz
-    EbN0_total_value = CN0_total_value / bit_rate # dimensionless ratio
-    EbN0_dB = dB_from_power(EbN0_total_value) # dB
+    #EbN0_total_value = CN0_total_value / bit_rate # dimensionless ratio
+    #EbN0_dB = dB_from_power(EbN0_total_value) # dB
 
     return {
         'FSPL_up_dB': L_up_path,
@@ -168,10 +168,11 @@ def full_link_budget(
         'L_atm_down_dB': L_atm_down,
         'L_rain_up_dB': L_rain_up,
         'L_rain_down_dB': L_rain_down,
-        'bit_rate_Mbps': bit_rate*10**(-6), # bps
-        'BW_MHz': BW*10**(-6), # Hz
+        #'bit_rate_Mbps': bit_rate*10**(-6), # bps
+        'BW_MHz': BW*10**(-6),
         'CNR_dB': total_CNR_dB,
-        'Eb/N0_dB': EbN0_dB,
+        'CN0_dB': CN0_dB,
+        #'Eb/N0_dB': EbN0_dB,
     }
 
 # main code
@@ -179,12 +180,14 @@ if __name__ == "__main__":
 
     # Communication specs
     BW = 230e6 # bandwidth in Hz
-    BIT_RATE = 3e8 # bit rate in bps
+    #BIT_RATE = 3e8 # bit rate in bps
     F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
     F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
     F_UP_RETURN = 29.62e9 # uplink frequency in Hz
     F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
     link_reliability = 0.999
+    link_margin = 10.0 # dB
+    roll_off = 0.1 
     
 
     # gateway specs
@@ -205,10 +208,10 @@ if __name__ == "__main__":
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
     }
-    #EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
-    #GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
-    EIRP_sat = 63.0 # dBW
-    GT_sat = 18.0 # dB/K
+    EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    #EIRP_sat = 63.0 # dBW
+    #GT_sat = 18.0 # dB/K
     # satellite specs
     sat = {
         'lat': 0, # degrees
@@ -232,7 +235,7 @@ if __name__ == "__main__":
             f_up=F_UP_FORWARD, # frequency in Hz
             f_down=F_DOWN_FORWARD, # frequency in Hz
             BW=BW, # bandwidth in Hz
-            bit_rate=BIT_RATE, # bit rate in bps
+            #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
 
@@ -247,7 +250,7 @@ if __name__ == "__main__":
             f_up=F_UP_RETURN, # frequency in Hz
             f_down=F_DOWN_RETURN, # frequency in Hz
             BW=BW, # bandwidth in Hz
-            bit_rate=BIT_RATE, # bit rate in bps
+            #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
 
@@ -267,19 +270,35 @@ if __name__ == "__main__":
             print(f"{k}: {v}")
 
         # given the Eb/N0, find the MODCOD
-        forward_EbN0 = forward_results['Eb/N0_dB']
-        return_EbN0 = return_results['Eb/N0_dB']
-        forward_MOD, forward_COD = ms.modcod_select(forward_EbN0)
-        return_MOD, return_COD = ms.modcod_select(return_EbN0)
+        forward_CN0 = forward_results['CN0_dB']
+        return_CN0 = return_results['CN0_dB']
+        forward_MOD, forward_COD, forward_SE = ms.modcod_select(forward_CN0, link_margin=link_margin)
+        return_MOD, return_COD, return_SE = ms.modcod_select(return_CN0, link_margin=link_margin)
+
+        if forward_SE is None or return_SE is None:
+            print("No link found for the given coordinates.")
+            exit(0)
+
+        forward_bitrate = BW/(1+roll_off) * forward_SE
+        return_bitrate = BW/(1+roll_off) * return_SE
+        forward_EbN0 = forward_CN0 - 10*np.log10(forward_bitrate)
+        return_EbN0 = return_CN0 - 10*np.log10(return_bitrate)
 
         print("\n")
         print("Forward Link MODCOD: ")
         print("=====================================")
         print(f"MOD: {forward_MOD}")
         print(f"COD: {forward_COD}")
+        print(f"link margin: {link_margin} dB")
+        print(f"bitrate: {forward_bitrate} bps")
+        print(f"Eb/N0: {forward_EbN0} dB")
         print("\n")
         print("Return Link MODCOD: ")
         print("=====================================")
         print(f"MOD: {return_MOD}")
         print(f"COD: {return_COD}")
+        print(f"link margin: {link_margin} dB")
+        print(f"bitrate: {return_bitrate} bps")
+        print(f"Eb/N0: {return_EbN0} dB")
+
         print("\n")
