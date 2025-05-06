@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 #   <Document>
 # </kml>
 
-EIRP_path = Path(__file__).parent / "gain_maps" / "EIRP.kml"
-GT_path = Path(__file__).parent / "gain_maps" / "GT.kml"
+EIRP_path = Path(__file__).parent / "gain_maps" / "Hy2_Hy4_ViasatBeams_EIRP_polygon.kml"
+GT_path = Path(__file__).parent / "gain_maps" / "Hy2_Hy4_ViasatBeams_GT_polygon.kml"
 # read kml file
 k_EIRP = kml.KML.parse(EIRP_path)
 k_GT = kml.KML.parse(GT_path)
@@ -65,6 +65,10 @@ def highest_EIRP_query(lat, lon):
     for i, polygon in enumerate(sorted_polygons_EIRP):
         if polygon.contains(point):
             return sorted_gains_EIRP[i]
+    point = Point(lon - 360, lat)  # shift the point to the left by 360 degrees
+    for i, polygon in enumerate(sorted_polygons_EIRP):
+        if polygon.contains(point):
+            return sorted_gains_EIRP[i]
     return None
 
 def highest_GT_query(lat, lon):
@@ -75,28 +79,35 @@ def highest_GT_query(lat, lon):
     for i, polygon in enumerate(sorted_polygons_GT):
         if polygon.contains(point):
             return sorted_gains_GT[i]
+    point = Point(lon - 360, lat)  # shift the point to the left by 360 degrees
+    for i, polygon in enumerate(sorted_polygons_EIRP):
+        if polygon.contains(point):
+            return sorted_gains_EIRP[i]
     return None
 
 # plot all EIRP polygons
-'''
-fig, ax = plt.subplots()
-for polygon in sorted_polygons_EIRP:
-    x, y = polygon.exterior.xy
-    ax.fill(x, y, alpha=0.5, fc='blue', ec='black')
-ax.set_title("EIRP polygons")
-ax.set_xlabel("Longitude")
-ax.set_ylabel("Latitude")
-plt.show()
-# plot all GT polygons
-fig, ax = plt.subplots()
-for polygon in sorted_polygons_GT:
-    x, y = polygon.exterior.xy
-    ax.fill(x, y, alpha=0.5, fc='red', ec='black')
-ax.set_title("GT polygons")
-ax.set_xlabel("Longitude")
-ax.set_ylabel("Latitude")
-plt.show()
-'''
+if __name__ == "__main__":
+    opacity = 0.3
+    # plot all EIRP polygons
+    fig, ax = plt.subplots()
+    for polygon in sorted_polygons_EIRP:
+        x, y = polygon.exterior.xy
+        ax.fill(x, y, alpha=opacity, fc='blue', ec='black')
+    ax.set_title("EIRP polygons")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    plt.show()
+    # plot all GT polygons
+    fig, ax = plt.subplots()
+    for polygon in sorted_polygons_GT:
+        x, y = polygon.exterior.xy
+        ax.fill(x, y, alpha=opacity, fc='red', ec='black')
+    ax.set_title("GT polygons")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    plt.show()
+
+
 #lat = 36
 #lon = 19
 #print(highest_EIRP_query(lat, lon))  # should return the highest gain in the EIRP polygons
