@@ -4,11 +4,6 @@ import kml_gain_query as kgq
 import L_atmos as la
 import L_rain as lr
 import modcod_select as ms
-import matplotlib.pyplot as plt
-import kml_gain_query as kgq
-import L_atmos as la
-import L_rain as lr
-import modcod_select as ms
 import rain_rate as rrb
 
 C_FREE_SPACE = 299792458.0 # m/s
@@ -199,7 +194,7 @@ if __name__ == "__main__":
     F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
     F_UP_RETURN = 29.62e9 # uplink frequency in Hz
     F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
-    link_reliability = 0.999 # probability of link closure
+    link_reliability = 0.995 # probability of link closure
     link_margin = 1.0 # dB
     roll_off = 0.1 
     
@@ -207,7 +202,7 @@ if __name__ == "__main__":
     # gateway specs
     gate = {
         'lat': 36, # degrees
-        'lon': 89, # degrees
+        'lon': 19, # degrees
         'alt': 0.0, # meters
         'PSD': 57.5e-6, # dBW/Hz
         'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
@@ -219,7 +214,7 @@ if __name__ == "__main__":
     # user terminal specs
     uterm = {
         'lat': 36, # degrees
-        'lon': 89, # degrees
+        'lon': 19, # degrees
         'alt': 0.3048 * 30000, # meters
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
