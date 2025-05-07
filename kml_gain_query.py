@@ -65,10 +65,6 @@ def highest_EIRP_query(lat, lon):
     for i, polygon in enumerate(sorted_polygons_EIRP):
         if polygon.contains(point):
             return sorted_gains_EIRP[i]
-    point = Point(lon - 360, lat)  # shift the point to the left by 360 degrees
-    for i, polygon in enumerate(sorted_polygons_EIRP):
-        if polygon.contains(point):
-            return sorted_gains_EIRP[i]
     return None
 
 def highest_GT_query(lat, lon):
@@ -79,10 +75,6 @@ def highest_GT_query(lat, lon):
     for i, polygon in enumerate(sorted_polygons_GT):
         if polygon.contains(point):
             return sorted_gains_GT[i]
-    point = Point(lon - 360, lat)  # shift the point to the left by 360 degrees
-    for i, polygon in enumerate(sorted_polygons_EIRP):
-        if polygon.contains(point):
-            return sorted_gains_EIRP[i]
     return None
 
 # plot all EIRP polygons
