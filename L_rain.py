@@ -40,7 +40,15 @@ rain_coeffs = {
 # rain heights
 lat_grid_rain_height = pd.read_csv("atmos_data\\rain_height_itu\\Lat.txt", sep="\\s+", header=None).to_numpy() # Y
 lon_grid_rain_height = pd.read_csv("atmos_data\\rain_height_itu\\Lon.txt", sep="\\s+", header=None).to_numpy() # X
+# enforce lon_grid_rain_height to be -180 to 180
+lon_grid_rain_height[lon_grid_rain_height > 180] -= 360
+# sort the longitude grid to be -180 to 180; this requires sorting the h0_grid as well
+lon_list_rain_height = lon_grid_rain_height[0]
 h0_grid = pd.read_csv("atmos_data\\rain_height_itu\\h0.txt", sep="\\s+", header=None).to_numpy() # Z
+h0_grid = h0_grid[:, lon_list_rain_height.argsort()]
+lon_grid_rain_height = lon_grid_rain_height[:, lon_list_rain_height.argsort()]
+#latitude doesn't need to be sorted.
+# read rain height data
 lat_list_rain_height = lat_grid_rain_height[:,0].flatten()
 lon_list_rain_height = lon_grid_rain_height[0]
 
