@@ -11,7 +11,10 @@ world = gpd.read_file("gain_maps\\ne_110m_admin_0_countries.zip")
 plot_opacity = 0.8
 world_opacity = 1.0
 
-
+lon_min = -30
+lon_max = 60
+lat_min = 20
+lat_max = 65
 
 
 
@@ -28,25 +31,28 @@ CN0_f_masked = ma.masked_where(CN0_fmap == -np.inf, CN0_fmap)
 CN0_r_masked = ma.masked_where(CN0_rmap == -np.inf, CN0_rmap)
 CN0_f_masked_filled = CN0_f_masked.filled(np.nan)
 CN0_r_masked_filled = CN0_r_masked.filled(np.nan)
-cmap = plt.cm.viridis.copy()
+cmap = plt.cm.inferno.copy()
 cmap.set_bad(color='black')
+cbar_max = np.ceil(max(np.nanmax(CN0_f_masked_filled), np.nanmax(CN0_r_masked_filled)))
+cbar_min = np.floor(min(np.nanmin(CN0_f_masked_filled), np.nanmin(CN0_r_masked_filled)))
+cn0_levels = np.arange(cbar_min, cbar_max + 1, 1)
 
 ## CN0 plots
 fig, axes = plt.subplots(2,1, sharex=True, figsize = (10,10))
 world.plot(ax=axes[0], color="lightgray", edgecolor="black", alpha=world_opacity)
-pcf = axes[0].contourf(lon_grid, lat_grid, CN0_f_masked_filled, cmap = cmap, alpha=plot_opacity)
+pcf = axes[0].contourf(lon_grid, lat_grid, CN0_f_masked_filled, levels=cn0_levels, cmap = cmap, alpha=plot_opacity)
 axes[0].set_xlabel("Longitude [$^\\circ$]")
 axes[0].set_ylabel("Latitude [$^\\circ$]")
 axes[0].set_title("Forward Link $C/N_0$ [dB Hz]")
-axes[0].set_xlim(-30, 60)
-axes[0].set_ylim(20, 65)
+axes[0].set_xlim(lon_min, lon_max)
+axes[0].set_ylim(lat_min, lat_max)
 world.plot(ax=axes[1], color="lightgray", edgecolor="black", alpha=world_opacity)
-pcr = axes[1].contourf(lon_grid, lat_grid, CN0_r_masked_filled, cmap = cmap, alpha=plot_opacity) 
+pcr = axes[1].contourf(lon_grid, lat_grid, CN0_r_masked_filled, levels=cn0_levels, cmap = cmap, alpha=plot_opacity) 
 axes[1].set_xlabel("Longitude [$^\\circ$]")
 axes[1].set_ylabel("Latitude [$^\\circ$]")
 axes[1].set_title("Return Link $C/N_0$ [dB Hz]")
-axes[1].set_xlim(-30, 60)
-axes[1].set_ylim(20, 65)
+axes[1].set_xlim(lon_min, lon_max)
+axes[1].set_ylim(lat_min, lat_max)
 fig.colorbar(pcr, ax=axes)
 plt.savefig("outputs\\CN0_fr.png")
 plt.show()
@@ -100,15 +106,16 @@ pcf = axes[0].contourf(lon_grid, lat_grid, modcod_fmap, levels, colors=colors, a
 axes[0].set_xlabel("Longitude [$^\\circ$]")
 axes[0].set_ylabel("Latitude [$^\\circ$]")
 axes[0].set_title("Forward Link MODCOD")
-axes[0].set_xlim(-30, 60)
-axes[0].set_ylim(20, 65)
+axes[0].set_xlim(lon_min, lon_max)
+axes[0].set_ylim(lat_min, lat_max)
 world.plot(ax=axes[1], color="lightgray", edgecolor="black", alpha=world_opacity)
 pcr = axes[1].contourf(lon_grid, lat_grid, modcod_rmap, levels, colors=colors, alpha=plot_opacity)
 axes[1].set_xlabel("Longitude [$^\\circ$]")
 axes[1].set_ylabel("Latitude [$^\\circ$]")
 axes[1].set_title("Return Link MODCOD")
-axes[1].set_xlim(-30, 60)
-axes[1].set_ylim(20, 65)
+axes[1].set_xlim(lon_min, lon_max)
+axes[1].set_ylim(lat_min, lat_max)
+
 
 # formatting contour labels
 '''
