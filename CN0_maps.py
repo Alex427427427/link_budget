@@ -25,7 +25,7 @@ F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
 F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
 F_UP_RETURN = 29.62e9 # uplink frequency in Hz
 F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
-link_reliability = 0.0
+link_reliability = 0.995
 
 # gateway specs
 gate = {
@@ -45,15 +45,19 @@ uterm = {
     'EIRP': 58.5, # dBW
     'G/T': 15.0 # dB/K
 }
-EIRP_sat = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
-GT_sat = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+EIRP_sat_f = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+GT_sat_f = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+EIRP_sat_r = kgq.highest_EIRP_query(gate['lat'], gate['lon']) # dBW
+GT_sat_r = kgq.highest_GT_query(uterm['lat'], uterm['lon']) # dB/K
 # satellite specs
 sat = {
     'lat': 0, # degrees
     'lon': 31.0, # degrees
     'alt': R_GEO - R_EQUATOR, # meters
-    'EIRP': EIRP_sat, # dBW
-    'G/T': GT_sat # dB/K
+    'EIRP_f': EIRP_sat_f, # dBW
+    'G/T_f': GT_sat_f, # dB/K
+    'EIRP_r': EIRP_sat_r, # dBW
+    'G/T_r': GT_sat_r # dB/K
 }
 
 # geographic coords of the user terminal
@@ -62,27 +66,35 @@ ulon_list = np.linspace(-180, 180, 361) # degrees
 CN0_fmap = np.zeros((len(ulat_list), len(ulon_list)))
 CN0_rmap = np.zeros((len(ulat_list), len(ulon_list)))
 
+'''
 for r, ulat in enumerate(ulat_list):
     print("========================")
     print(f"Calculating for LAT = {ulat}...")
     for c, ulon in enumerate(ulon_list):
+        print(f"LON: {ulon}")
+    '''
+for c, ulon in enumerate(ulon_list):
+    print("========================")
+    print(f"Calculating for LON = {ulon}...")
+    for r, ulat in enumerate(ulat_list):
+        
         uterm['lat'] = ulat
         uterm['lon'] = ulon
-        sat['EIRP'] = kgq.highest_EIRP_query(ulat, ulon) # dBW
+        sat['EIRP_f'] = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+        sat['G/T_r'] = kgq.highest_GT_query(uterm['lat'], uterm['lon']) # dB/K
 
-        if sat['EIRP'] is None:
+        if sat['EIRP_f'] is None or sat['G/T_f'] is None or sat['EIRP_r'] is None or sat['G/T_r'] is None:
             CN0_fmap[r, c] = -np.inf
             CN0_rmap[r, c] = -np.inf
             continue
+        print(f"LAT: {ulat}")
 
-        print(f"LON: {ulon}")
-        
         forward_results = lb.full_link_budget(
             EIRP_Earth_start=gate['EIRP'], # dBW
             Earth_start_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
             sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
-            G_per_T_sat=sat['G/T'], # dB/K
-            EIRP_sat=sat['EIRP'], # dBW
+            G_per_T_sat=sat['G/T_f'], # dB/K
+            EIRP_sat=sat['EIRP_f'], # dBW
             Earth_end_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
             G_per_T_Earth_end=uterm['G/T'], # dB/K
             f_up=F_UP_FORWARD, # frequency in Hz
@@ -97,8 +109,8 @@ for r, ulat in enumerate(ulat_list):
             EIRP_Earth_start=uterm['EIRP'], # dBW
             Earth_start_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
             sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
-            G_per_T_sat=sat['G/T'], # dB/K
-            EIRP_sat=sat['EIRP'], # dBW
+            G_per_T_sat=sat['G/T_r'], # dB/K
+            EIRP_sat=sat['EIRP_r'], # dBW
             Earth_end_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
             G_per_T_Earth_end=gate['G/T'], # dB/K
             f_up=F_UP_RETURN, # frequency in Hz
