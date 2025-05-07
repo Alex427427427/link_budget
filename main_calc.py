@@ -106,7 +106,7 @@ def full_link_budget(
         sat_lat_lon_alt, G_per_T_sat, EIRP_sat, 
         Earth_end_lat_lon_alt, G_per_T_Earth_end, 
         f_up, f_down, BW, 
-        link_reliability=0.999, # link reliability
+        link_reliability=0.0, # link reliability
         C_IM=10000
     ):
     '''
@@ -131,19 +131,23 @@ def full_link_budget(
         f_down
     ) # dB, atmospheric loss in downlink
 
-    p_rain = 1 - link_reliability # probability of rain = 0.1% of time
-    rr_up = rrb.rr_upper_bound(Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], p_rain) # mm/h
-    rr_down = rrb.rr_upper_bound(Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], p_rain) # mm/h
-    L_rain_up = rain_loss(
-        Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
-        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_up, np.pi/4, rr_up
-    )
-    L_rain_down = rain_loss(
-        Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
-        sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
-        f_down, np.pi/4, rr_down
-    )
+    if link_reliability < 0.5:
+        L_rain_up = 0.0 # dB, rain loss in uplink
+        L_rain_down = 0.0
+    else:
+        p_rain = 1 - link_reliability # probability of rain = 0.1% of time
+        rr_up = rrb.rr_upper_bound(Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], p_rain) # mm/h
+        rr_down = rrb.rr_upper_bound(Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], p_rain) # mm/h
+        L_rain_up = rain_loss(
+            Earth_start_lat_lon_alt[0], Earth_start_lat_lon_alt[1], Earth_start_lat_lon_alt[2],
+            sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+            f_up, np.pi/4, rr_up
+        )
+        L_rain_down = rain_loss(
+            Earth_end_lat_lon_alt[0], Earth_end_lat_lon_alt[1], Earth_end_lat_lon_alt[2],
+            sat_lat_lon_alt[0], sat_lat_lon_alt[1], sat_lat_lon_alt[2],
+            f_down, np.pi/4, rr_down
+        )
 
     noise = noise_power_per_T(BW) # dBW/K
 
@@ -185,15 +189,15 @@ if __name__ == "__main__":
     F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
     F_UP_RETURN = 29.62e9 # uplink frequency in Hz
     F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
-    link_reliability = 0.999
-    link_margin = 0.0 # dB
+    link_reliability = 0.995 # probability of link closure
+    link_margin = 1.0 # dB
     roll_off = 0.1 
     
 
     # gateway specs
     gate = {
-        'lat': 44.7, # degrees
-        'lon': 81.4, # degrees
+        'lat': 36, # degrees
+        'lon': 19, # degrees
         'alt': 0.0, # meters
         'PSD': 57.5e-6, # dBW/Hz
         'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
@@ -202,8 +206,8 @@ if __name__ == "__main__":
     }
     # user terminal specs
     uterm = {
-        'lat': 45, # degrees
-        'lon': 80, # degrees
+        'lat': 36, # degrees
+        'lon': 19, # degrees
         'alt': 0.3048 * 30000, # meters
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
@@ -235,6 +239,7 @@ if __name__ == "__main__":
             f_up=F_UP_FORWARD, # frequency in Hz
             f_down=F_DOWN_FORWARD, # frequency in Hz
             BW=BW, # bandwidth in Hz
+            link_reliability=link_reliability, # probability of link closure
             #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
@@ -250,6 +255,7 @@ if __name__ == "__main__":
             f_up=F_UP_RETURN, # frequency in Hz
             f_down=F_DOWN_RETURN, # frequency in Hz
             BW=BW, # bandwidth in Hz
+            link_reliability=link_reliability, # probability of link closure
             #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
