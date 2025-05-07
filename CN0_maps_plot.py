@@ -47,7 +47,7 @@ axes[1].set_ylabel("Latitude [$^\\circ$]")
 axes[1].set_title("Return Link $C/N_0$ [dB Hz]")
 axes[1].set_xlim(-30, 60)
 axes[1].set_ylim(20, 65)
-fig.colorbar(pcf, ax=axes)
+fig.colorbar(pcr, ax=axes)
 plt.savefig("outputs\\CN0_fr.png")
 plt.show()
 
