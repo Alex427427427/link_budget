@@ -25,7 +25,7 @@ F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
 F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
 F_UP_RETURN = 29.62e9 # uplink frequency in Hz
 F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
-link_reliability = 0.999
+link_reliability = 0.0
 
 # gateway specs
 gate = {
@@ -58,7 +58,7 @@ sat = {
 
 # geographic coords of the user terminal
 ulat_list = np.linspace(-90, 90, 181) # degrees
-ulon_list = np.linspace(0, 360, 361) # degrees
+ulon_list = np.linspace(-180, 180, 361) # degrees
 CN0_fmap = np.zeros((len(ulat_list), len(ulon_list)))
 CN0_rmap = np.zeros((len(ulat_list), len(ulon_list)))
 
@@ -88,6 +88,7 @@ for r, ulat in enumerate(ulat_list):
             f_up=F_UP_FORWARD, # frequency in Hz
             f_down=F_DOWN_FORWARD, # frequency in Hz
             BW=BW, # bandwidth in Hz
+            link_reliability=link_reliability, # link reliability
             #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
@@ -103,6 +104,7 @@ for r, ulat in enumerate(ulat_list):
             f_up=F_UP_RETURN, # frequency in Hz
             f_down=F_DOWN_RETURN, # frequency in Hz
             BW=BW, # bandwidth in Hz
+            link_reliability=link_reliability, # link reliability
             #bit_rate=BIT_RATE, # bit rate in bps
             C_IM=gate['C/IM'] # dB
         )
@@ -118,27 +120,3 @@ ulon_grid, ulat_grid = np.meshgrid(ulon_list, ulat_list)
 np.savetxt('outputs\\LON.csv', ulon_grid, fmt='%.2f', delimiter=',')
 np.savetxt('outputs\\LAT.csv', ulat_grid, fmt='%.2f', delimiter=',')
 
-'''
-# plot
-masked_EbN0_fmap = ma.masked_where(EbN0_fmap == -np.inf, EbN0_fmap)
-masked_EbN0_rmap = ma.masked_where(EbN0_rmap == -np.inf, EbN0_rmap)
-
-cmap = plt.cm.viridis.copy()
-cmap.set_bad(color='black')
-
-plt.imshow(masked_EbN0_fmap, cmap=cmap, origin='lower')
-plt.colorbar()
-plt.xlabel("Longitude [$^\circ$]")
-plt.ylabel("Latitude [$^\circ$]")
-plt.title("Forward Link $E_b/N_0$ [dB]")
-plt.savefig("outputs\\EbN0_fmap.png")
-plt.show()
-
-plt.imshow(masked_EbN0_rmap, cmap=cmap, origin='lower')
-plt.colorbar()
-plt.xlabel("Longitude [$^\circ$]")
-plt.ylabel("Latitude [$^\circ$]")
-plt.title("Return Link $E_b/N_0$ [dB]")
-plt.savefig("outputs\\EbN0_rmap.png")
-plt.show()
-'''
