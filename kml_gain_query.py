@@ -22,8 +22,8 @@ import matplotlib.pyplot as plt
 #   <Document>
 # </kml>
 
-EIRP_path = Path(__file__).parent / "gain_maps" / "Hy2_Hy4_ViasatBeams_EIRP_polygon.kml"
-GT_path = Path(__file__).parent / "gain_maps" / "Hy2_Hy4_ViasatBeams_GT_polygon.kml"
+EIRP_path = Path(__file__).parent / "gain_maps" / "EIRP.kml"
+GT_path = Path(__file__).parent / "gain_maps" / "GT.kml"
 # read kml file
 k_EIRP = kml.KML.parse(EIRP_path)
 k_GT = kml.KML.parse(GT_path)
