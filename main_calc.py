@@ -107,7 +107,7 @@ def full_link_budget(
         Earth_end_lat_lon_alt, G_per_T_Earth_end, 
         f_up, f_down, BW, 
         link_reliability=0.0, # link reliability
-        C_IM=10000
+        C_IM=10000.0, # dB, carrier to interference ratio
     ):
     '''
     Calculates the receive power in dBW at the Earth_end terminal in the forward link (Earth_start -> sat -> Earth_end)
@@ -158,7 +158,7 @@ def full_link_budget(
     uplink_CNR = single_link_CNR(EIRP_Earth_start, L_up_total, G_per_T_sat, noise) # dB
     downlink_CNR = single_link_CNR(EIRP_sat, L_down_total, G_per_T_Earth_end, noise) # dB
 
-    #print(f"L_uplink: {L_up_total:.2f} dB, L_downlink: {L_down_total:.2f} dB")
+    #print(f"uplink CNR: {uplink_CNR:.2f} dB, downlink CNR: {downlink_CNR:.2f} dB")
 
     # final results
     total_CNR_dB = total_CNR([uplink_CNR, downlink_CNR, C_IM]) # dB
@@ -178,146 +178,245 @@ def full_link_budget(
         'L_rain_up_dB': L_rain_up,
         'L_rain_down_dB': L_rain_down,
         #'bit_rate_Mbps': bit_rate*10**(-6), # bps
-        'BW_MHz': BW*10**(-6),
+        #'BW_MHz': BW*10**(-6),
         'CNR_dB': total_CNR_dB,
-        'CN0_dB': CN0_dB,
+        'C/N0_dB': CN0_dB,
         #'Eb/N0_dB': EbN0_dB,
     }
 
 # main code
 if __name__ == "__main__":
 
-    # Communication specs
-    BW = 230e6 # bandwidth in Hz
-    #BIT_RATE = 3e8 # bit rate in bps
-    F_UP_FORWARD = 28.12e9 # uplink frequency in Hz
-    F_DOWN_FORWARD = F_UP_FORWARD - 8.3e9 # downlink frequency in Hz
-    F_UP_RETURN = 29.62e9 # uplink frequency in Hz
-    F_DOWN_RETURN = F_UP_RETURN - 11.30e9 # downlink frequency in Hz
+    # beam frequency and bandwidth plans
     link_reliability = 0.995 # probability of link closure
-    link_margin = 1.0 # dB
-    roll_off = 0.1 
-    
+    link_margin = 1.0 # dB (implementation loss)
+    roll_off = 0.1 # ASSUMPTION
+    SR_FORWARD = 52e6 # Mega symbols per second
+    SR_RETURN = 10e6 # Mega symbols per second
+    BW_ALLOCATED_FORWARD = SR_FORWARD*(1+roll_off) # Hz
+    BW_ALLOCATED_RETURN = SR_RETURN*(1+roll_off) # Hz
+    BW_FORWARD = 230.0e6 # Hz
+    BW_RETURN = 220.0e6 # Hz
+    OBO_FORWARD = 3.5 # dB
+    OBO_RETURN = 5.8 # dB
+    beam_plans = {
+        "fu": {
+            "17": 28.12e9, # L
+            "22": 28.12e9, # R
+
+            "21": 28.38e9, # L
+            "24": 28.38e9, # R
+
+            "25": 28.67e9, # R
+            "28": 28.67e9, # L
+
+            "26": 28.93e9, # L
+            "30": 28.93e9, # R
+        },
+        "fd": {
+            "22": 19.82e9, # L
+            "17": 19.82e9, # R
+
+            "24": 20.08e9, # L
+            "21": 20.08e9, # R
+
+            "28": 19.82e9, # R
+            "25": 19.82e9, # L
+
+            "30": 20.08e9, # L
+            "26": 20.08e9, # R
+        },
+        "ru": {
+            "17": 29.62e9, # L
+            "22": 29.62e9, # R
+
+            "21": 29.87e9, # L
+            "24": 29.87e9, # R
+
+            "25": 29.62e9, # R
+            "28": 29.62e9, # L
+
+            "26": 29.87e9, # L
+            "30": 29.87e9, # R
+        },
+        "rd": {
+            "22": 18.32e9, # L
+            "17": 18.32e9, # R
+
+            "24": 18.57e9, # L
+            "21": 18.57e9, # R
+
+            "28": 18.82e9, # R
+            "25": 18.82e9, # L
+
+            "30": 19.07e9, # L
+            "26": 19.07e9, # R
+        }
+    }
 
     # gateway specs
     gate = {
-        'lat': 36, # degrees
-        'lon': 19, # degrees
+        'lat': 33.22, # degrees
+        'lon': 35.10, # degrees
         'alt': 0.0, # meters
-        'PSD': 57.5e-6, # dBW/Hz
-        'EIRP': 57.5e-6 + 10*np.log10(BW), # dBW
+        'PSD': 57.5 - 60, # dBW/Hz
+        'EIRP': 57.5 - 60 + 10*np.log10(BW_ALLOCATED_FORWARD), # dBW
         'G/T': 38.2, # dB/K
         'C/IM': 20.0 # dB
     }
-
-    #print("Gateway EIRP: ", gate['EIRP'], "dBW")
     # user terminal specs
     uterm = {
-        'lat': 36, # degrees
-        'lon': 19, # degrees
+        'lat': 33.22, # degrees
+        'lon': 35.10, # degrees
         'alt': 0.3048 * 30000, # meters
         'EIRP': 58.5, # dBW
         'G/T': 15.0 # dB/K
     }
-    EIRP_sat_f = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
-    GT_sat_f = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
-    EIRP_sat_r = kgq.highest_EIRP_query(gate['lat'], gate['lon']) # dBW
-    GT_sat_r = kgq.highest_GT_query(uterm['lat'], uterm['lon']) # dB/K
-        
-    #EIRP_sat = 63.0 # dBW
-    #GT_sat = 18.0 # dB/K
+    # satellite specs
+    EIRP_sat_f, beam_id_fd = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
+    GT_sat_f, beam_id_fu = kgq.highest_GT_query(gate['lat'], gate['lon']) # dB/K
+    EIRP_sat_r, beam_id_rd = kgq.highest_EIRP_query(gate['lat'], gate['lon']) # dBW
+    GT_sat_r, beam_id_ru = kgq.highest_GT_query(uterm['lat'], uterm['lon']) # dB/K
+    if EIRP_sat_f is None or GT_sat_f is None or EIRP_sat_r is None or GT_sat_r is None:
+        print("No link found for the given coordinates.")
+        exit(0)
     # satellite specs
     sat = {
         'lat': 0, # degrees
         'lon': 31.0, # degrees
         'alt': R_GEO - R_EQUATOR, # meters
-        'EIRP_f': EIRP_sat_f, # dBW
-        'G/T_f': GT_sat_r, # dB/K
-        'EIRP_r': EIRP_sat_r, # dBW
-        'G/T_r': GT_sat_f # dB/K
+        'EIRP_f': EIRP_sat_f - OBO_FORWARD + np.log10(BW_ALLOCATED_FORWARD/BW_FORWARD), # dBW
+        'G/T_f': GT_sat_f, # dB/K
+        'EIRP_r': EIRP_sat_r - OBO_RETURN + np.log10(BW_ALLOCATED_RETURN/BW_RETURN) , # dBW
+        'G/T_r': GT_sat_r, # dB/K
+        'beam_id_fd': beam_id_fd, # beam id for forward downward link
+        'beam_id_fu': beam_id_fu, # beam id for forward upward link
+        'beam_id_rd': beam_id_rd, # beam id for return downward link
+        'beam_id_ru': beam_id_ru, # beam id for return upward link
     }
     
-    if sat['EIRP_f'] is None or sat['G/T_f'] is None or sat['EIRP_r'] is None or sat['G/T_r'] is None:
+
+    try: 
+        # Communication specs
+        F_UP_FORWARD = beam_plans["fu"][str(beam_id_fu)] # uplink frequency in Hz
+        F_DOWN_FORWARD = beam_plans["fd"][str(beam_id_fd)] # downlink frequency in Hz
+        F_UP_RETURN = beam_plans["ru"][str(beam_id_ru)] # uplink frequency in Hz
+        F_DOWN_RETURN = beam_plans["rd"][str(beam_id_rd)]# downlink frequency in Hz
+    except KeyError as e:
+        print(f"No beam plan found for the beam id. Please check the beam plans.")
+        exit(0)
+
+
+    # Print the link budget specs
+    print()
+    print("=====================================")
+    print("Link Budget Specs")
+    print("=====================================")
+    print(f"Gateway Lat/Lon/Alt: {gate['lat']:.2f}\u00b0 / {gate['lon']:.2f}\u00b0 / {gate['alt']:.2f} m")
+    print(f"User Terminal Lat/Lon/Alt: {uterm['lat']:.2f}\u00b0 / {uterm['lon']:.2f}\u00b0 / {uterm['alt']:.2f} m")
+    print(f"Satellite Lat/Lon/Alt: {sat['lat']:.2f}\u00b0 / {sat['lon']:.2f}\u00b0 / {sat['alt']:.2f} m")
+
+    print(f"Link Reliability: {link_reliability*100:.2f} %")
+    print(f"Minimum Link Margin: {link_margin:.2f} dB")
+    print("Bit Error Rate: pseudo error free")
+    #print(f"Gateway Beam ID: {beam_id_fu}")
+    #print(f"User Beam ID: {beam_id_fd}")
+
+    #print(f"Forward Link Transponder Bandwidth: {BW_FORWARD/1e6:.2f} MHz")
+    #print(f"Return Link Transponder Bandwidth: {BW_RETURN/1e6:.2f} MHz")
+
+    print(f"Forward Link Allocated Bandwidth: {BW_ALLOCATED_FORWARD/1e6:.2f} MHz")
+    print(f"Return Link Allocated Bandwidth: {BW_ALLOCATED_RETURN/1e6:.2f} MHz")
+
+    print(f"Forward UpLink Frequency: {F_UP_FORWARD/1e9:.2f} GHz")
+    print(f"Forward DownLink Frequency: {F_DOWN_FORWARD/1e9:.2f} GHz")
+    print(f"Return UpLink Frequency: {F_UP_RETURN/1e9:.2f} GHz")
+    print(f"Return DownLink Frequency: {F_DOWN_RETURN/1e9:.2f} GHz")
+    print()
+
+
+
+        
+    forward_results = full_link_budget(
+        EIRP_Earth_start=gate['EIRP'], # dBW
+        Earth_start_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+        sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+        G_per_T_sat=sat['G/T_f'], # dB/K
+        EIRP_sat=sat['EIRP_f'], # dBW
+        Earth_end_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+        G_per_T_Earth_end=uterm['G/T'], # dB/K
+        f_up=F_UP_FORWARD, # frequency in Hz
+        f_down=F_DOWN_FORWARD, # frequency in Hz
+        BW=BW_ALLOCATED_FORWARD, # bandwidth in Hz
+        link_reliability=link_reliability, # probability of link closure
+        #bit_rate=BIT_RATE, # bit rate in bps
+        C_IM=gate['C/IM'] # dB
+    )
+
+    return_results = full_link_budget(
+        EIRP_Earth_start=uterm['EIRP'], # dBW
+        Earth_start_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
+        sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
+        G_per_T_sat=sat['G/T_r'], # dB/K
+        EIRP_sat=sat['EIRP_r'], # dBW
+        Earth_end_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
+        G_per_T_Earth_end=gate['G/T'], # dB/K
+        f_up=F_UP_RETURN, # frequency in Hz
+        f_down=F_DOWN_RETURN, # frequency in Hz
+        BW=BW_ALLOCATED_RETURN, # bandwidth in Hz
+        link_reliability=link_reliability, # probability of link closure
+        #bit_rate=BIT_RATE, # bit rate in bps
+        C_IM=gate['C/IM'] # dB
+    )
+
+    print("\nLink Budget Calculation Results")
+    print("=====================================")
+
+    print("Forward Link: ")
+    print("=====================================")
+    for k, v in forward_results.items():
+        print(f"{k}: {v:.2f}")
+
+    print("\n")
+    
+    print("Return Link: ")
+    print("=====================================")
+    for k, v in return_results.items():
+        print(f"{k}: {v:.2f}")
+
+    # given the Eb/N0, find the MODCOD
+    forward_CN0 = forward_results['C/N0_dB']
+    return_CN0 = return_results['C/N0_dB']
+    forward_MOD, forward_COD, forward_SE, forward_bpsym, forward_lm = ms.modcod_select(forward_CN0, link_margin=link_margin)
+    return_MOD, return_COD, return_SE, return_bpsym, return_lm = ms.modcod_select(return_CN0, link_margin=link_margin)
+
+    if forward_SE is None or return_SE is None:
         print("No link found for the given coordinates.")
-    else:
-        
-        forward_results = full_link_budget(
-            EIRP_Earth_start=gate['EIRP'], # dBW
-            Earth_start_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
-            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
-            G_per_T_sat=sat['G/T_f'], # dB/K
-            EIRP_sat=sat['EIRP_f'], # dBW
-            Earth_end_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
-            G_per_T_Earth_end=uterm['G/T'], # dB/K
-            f_up=F_UP_FORWARD, # frequency in Hz
-            f_down=F_DOWN_FORWARD, # frequency in Hz
-            BW=BW, # bandwidth in Hz
-            link_reliability=link_reliability, # probability of link closure
-            #bit_rate=BIT_RATE, # bit rate in bps
-            C_IM=gate['C/IM'] # dB
-        )
+        exit(0)
 
-        return_results = full_link_budget(
-            EIRP_Earth_start=uterm['EIRP'], # dBW
-            Earth_start_lat_lon_alt=(np.radians(uterm['lat']), np.radians(uterm['lon']), uterm['alt']), # lat, lon, alt in radians and meters
-            sat_lat_lon_alt=(np.radians(sat['lat']), np.radians(sat['lon']), sat['alt']), # lat, lon, alt in radians and meters
-            G_per_T_sat=sat['G/T_r'], # dB/K
-            EIRP_sat=sat['EIRP_r'], # dBW
-            Earth_end_lat_lon_alt=(np.radians(gate['lat']), np.radians(gate['lon']), gate['alt']), # lat, lon, alt in radians and meters
-            G_per_T_Earth_end=gate['G/T'], # dB/K
-            f_up=F_UP_RETURN, # frequency in Hz
-            f_down=F_DOWN_RETURN, # frequency in Hz
-            BW=BW, # bandwidth in Hz
-            link_reliability=link_reliability, # probability of link closure
-            #bit_rate=BIT_RATE, # bit rate in bps
-            C_IM=gate['C/IM'] # dB
-        )
+    forward_bitrate = SR_FORWARD * forward_bpsym
+    return_bitrate = SR_RETURN * return_bpsym
+    forward_EbN0 = forward_CN0 - 10*np.log10(forward_bitrate)
+    return_EbN0 = return_CN0 - 10*np.log10(return_bitrate)
 
-        print("\nLink Budget Calculation Results")
-        print("=====================================")
+    forward_info_bitrate = BW_ALLOCATED_FORWARD * forward_SE
+    return_info_bitrate = BW_ALLOCATED_RETURN * return_SE
 
-        print("Forward Link: ")
-        print("=====================================")
-        for k, v in forward_results.items():
-            print(f"{k}: {v:.2f}")
+    print("\n")
+    print("Forward Link MODCOD: ")
+    print("=====================================")
+    print(f"MOD: {forward_MOD}")
+    print(f"COD: {forward_COD}")
+    print(f"actual link margin: {forward_lm:.2f} dB")
+    print(f"info bitrate: {forward_info_bitrate/1e6:.2f} Mbps")
+    print(f"Eb/N0: {forward_EbN0:.2f} dB")
+    print("\n")
+    print("Return Link MODCOD: ")
+    print("=====================================")
+    print(f"MOD: {return_MOD}")
+    print(f"COD: {return_COD}")
+    print(f"actual link margin: {return_lm:.2f} dB")
+    print(f"info bitrate: {return_info_bitrate/1e6:.2f} Mbps")
+    print(f"Eb/N0: {return_EbN0:.2f} dB")
 
-        print("\n")
-        
-        print("Return Link: ")
-        print("=====================================")
-        for k, v in return_results.items():
-            print(f"{k}: {v:.2f}")
-
-        # given the Eb/N0, find the MODCOD
-        forward_CN0 = forward_results['CN0_dB']
-        return_CN0 = return_results['CN0_dB']
-        forward_MOD, forward_COD, forward_SE = ms.modcod_select(forward_CN0, link_margin=link_margin)
-        return_MOD, return_COD, return_SE = ms.modcod_select(return_CN0, link_margin=link_margin)
-
-        if forward_SE is None or return_SE is None:
-            print("No link found for the given coordinates.")
-            exit(0)
-
-        forward_bitrate = BW/(1+roll_off) * forward_SE
-        return_bitrate = BW/(1+roll_off) * return_SE
-        forward_EbN0 = forward_CN0 - 10*np.log10(forward_bitrate)
-        return_EbN0 = return_CN0 - 10*np.log10(return_bitrate)
-
-        print("\n")
-        print("Forward Link MODCOD: ")
-        print("=====================================")
-        print(f"MOD: {forward_MOD}")
-        print(f"COD: {forward_COD}")
-        print(f"link margin: {link_margin:.2f} dB")
-        print(f"bitrate: {forward_bitrate/1e6:.2f} Mbps")
-        print(f"Eb/N0: {forward_EbN0:.2f} dB")
-        print("\n")
-        print("Return Link MODCOD: ")
-        print("=====================================")
-        print(f"MOD: {return_MOD}")
-        print(f"COD: {return_COD}")
-        print(f"link margin: {link_margin:.2f} dB")
-        print(f"bitrate: {return_bitrate/1e6:.2f} Mbps")
-        print(f"Eb/N0: {return_EbN0:.2f} dB")
-
-        print("\n")
+    print("\n")
