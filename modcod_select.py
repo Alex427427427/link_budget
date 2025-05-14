@@ -15,6 +15,14 @@ SE_table = np.array(
         3.300184, 3.703295, 3.523143, 3.567342, 3.951571, 4.119540, 4.397854, 4.453027
     ]
 )
+bpsym_table = np.array(
+    [
+        2,2,2,2,2,2,2,2,
+        2,3,2,2,3,3,4,3,
+        4,3,3,4,4,5,4,4,
+        5,5,5,5
+    ]
+)
 '''
 EbN0_table = np.array([
     -5.36,-4.25,-3.31,-2.01,-0.78,0.09,1.02,1.67,2.17,0.729,3.19,3.41,1.849,3.139,2.949,4.579,4.189,5.919,6.209,5.009,
@@ -34,6 +42,7 @@ COD_table = np.array([
 sorted_indices = np.argsort(SE_table)
 SE_table = SE_table[sorted_indices]
 CN0_table = CN0_table[sorted_indices]
+bpsym_table = bpsym_table[sorted_indices]
 #EbN0_table = EbN0_table[sorted_indices]
 MOD_table = MOD_table[sorted_indices]
 COD_table = COD_table[sorted_indices]
@@ -45,6 +54,8 @@ def modcod_select(CN0, link_margin):
         MOD = "None"
         COD = "None"
         SE = None
+        bpsym = None
+        LM = None
     else: 
         # find the indices where the CN0 is greater than the threshold
         indices = np.where(CN0_table <= CN0)[0]
@@ -54,5 +65,7 @@ def modcod_select(CN0, link_margin):
         MOD = MOD_table[max_index]
         COD = COD_table[max_index]
         SE = SE_table[max_index]
-    return MOD, COD, SE
+        bpsym = bpsym_table[max_index]
+        LM = CN0 - CN0_table[max_index] + link_margin
+    return MOD, COD, SE, bpsym, LM
 
