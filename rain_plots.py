@@ -66,7 +66,7 @@ plt.show()
 ## Plot the rain height map
 Y = lat_grid_rain_height
 X = lon_grid_rain_height
-Z = h0_grid
+Z = h0_grid + 0.36
 plt.figure(figsize=(10,5))
 plt.pcolormesh(X, Y, Z, cmap="YlGnBu")
 plt.xlabel("Longitude [$^\\circ$]")
