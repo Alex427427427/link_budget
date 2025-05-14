@@ -1,5 +1,6 @@
-- Enforce all longitude to be within [-180, 180].
 - Fix all paths to be pathlib.Path
 - Consider implementing classes
 - Rework repo structure
 - fix kml libraries
+- turn some inputs into command line input files.
+- fix until conforms with ITU-RPY. Or maybe simply replace with ITU-RPY?
