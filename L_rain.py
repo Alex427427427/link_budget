@@ -157,7 +157,7 @@ def rain_total_atten(f, rr, gnd_lat_rad, gnd_lon_rad, elev_angle=np.pi/2, p_angl
     gnd_lon_deg = gnd_lon_rad * 180.0 / np.pi
 
     gamma = rain_spec_atten(f, rr, elev_angle, p_angle)
-    rain_height = gl.grid_lookup(gnd_lat_deg, gnd_lon_deg, lat_list_rain_height, lon_list_rain_height, h0_grid)
+    rain_height = gl.grid_lookup(gnd_lat_deg, gnd_lon_deg, lat_list_rain_height, lon_list_rain_height, h0_grid) + 0.36 # km
     slant_path_length = rain_height / np.sin(elev_angle)
     
     return gamma*slant_path_length
