@@ -189,88 +189,88 @@ if __name__ == "__main__":
 
     # beam frequency and bandwidth plans
     link_reliability = 0.995 # probability of link closure
-    link_margin = 1.0 # dB (implementation loss)
-    roll_off = 0.1 # ASSUMPTION
-    SR_FORWARD = 52e6 # Mega symbols per second
-    SR_RETURN = 10e6 # Mega symbols per second
+    link_margin = 3.0 # dB (implementation loss)
+    roll_off = 0.15 # ASSUMPTION
+    SR_FORWARD = 42e6 # Mega symbols per second
+    SR_RETURN = 7e6 # Mega symbols per second
     BW_ALLOCATED_FORWARD = SR_FORWARD*(1+roll_off) # Hz
     BW_ALLOCATED_RETURN = SR_RETURN*(1+roll_off) # Hz
-    BW_FORWARD = 230.0e6 # Hz
-    BW_RETURN = 220.0e6 # Hz
-    OBO_FORWARD = 3.5 # dB
-    OBO_RETURN = 5.8 # dB
+    BW_FORWARD = 250.0e6 # Hz
+    BW_RETURN = 240.0e6 # Hz
+    OBO_FORWARD = 3.0 # dB
+    OBO_RETURN = 4.0 # dB
     beam_plans = {
         "fu": {
-            "17": 28.12e9, # L
-            "22": 28.12e9, # R
+            "17": 28.32e9, # L
+            "22": 28.32e9, # R
 
-            "21": 28.38e9, # L
-            "24": 28.38e9, # R
+            "21": 28.45e9, # L
+            "24": 28.45e9, # R
 
             "25": 28.67e9, # R
             "28": 28.67e9, # L
 
-            "26": 28.93e9, # L
-            "30": 28.93e9, # R
+            "26": 28.94e9, # L
+            "30": 28.94e9, # R
         },
         "fd": {
-            "22": 19.82e9, # L
-            "17": 19.82e9, # R
+            "22": 19.52e9, # L
+            "17": 19.52e9, # R
 
-            "24": 20.08e9, # L
-            "21": 20.08e9, # R
+            "24": 20.28e9, # L
+            "21": 20.28e9, # R
 
-            "28": 19.82e9, # R
-            "25": 19.82e9, # L
+            "28": 19.84e9, # R
+            "25": 19.84e9, # L
 
-            "30": 20.08e9, # L
-            "26": 20.08e9, # R
+            "30": 21.08e9, # L
+            "26": 21.08e9, # R
         },
         "ru": {
-            "17": 29.62e9, # L
-            "22": 29.62e9, # R
+            "17": 30.62e9, # L
+            "22": 30.62e9, # R
 
-            "21": 29.87e9, # L
-            "24": 29.87e9, # R
+            "21": 30.17e9, # L
+            "24": 30.17e9, # R
 
-            "25": 29.62e9, # R
-            "28": 29.62e9, # L
+            "25": 30.62e9, # R
+            "28": 30.62e9, # L
 
-            "26": 29.87e9, # L
-            "30": 29.87e9, # R
+            "26": 30.17e9, # L
+            "30": 30.17e9, # R
         },
         "rd": {
-            "22": 18.32e9, # L
-            "17": 18.32e9, # R
+            "22": 19.12e9, # L
+            "17": 19.12e9, # R
 
-            "24": 18.57e9, # L
-            "21": 18.57e9, # R
+            "24": 17.97e9, # L
+            "21": 17.97e9, # R
 
-            "28": 18.82e9, # R
-            "25": 18.82e9, # L
+            "28": 19.62e9, # R
+            "25": 19.62e9, # L
 
-            "30": 19.07e9, # L
-            "26": 19.07e9, # R
+            "30": 18.09e9, # L
+            "26": 18.09e9, # R
         }
     }
 
     # gateway specs
     gate = {
-        'lat': 33.22, # degrees
-        'lon': 35.10, # degrees
+        'lat': 43.22, # degrees
+        'lon': 15.10, # degrees
         'alt': 0.0, # meters
-        'PSD': 57.5 - 60, # dBW/Hz
-        'EIRP': 57.5 - 60 + 10*np.log10(BW_ALLOCATED_FORWARD), # dBW
-        'G/T': 38.2, # dB/K
-        'C/IM': 20.0 # dB
+        'PSD': 58.0 - 60, # dBW/Hz
+        'EIRP': 58.0 - 60 + 10*np.log10(BW_ALLOCATED_FORWARD), # dBW
+        'G/T': 40.0, # dB/K
+        'C/IM': 30.0 # dB
     }
     # user terminal specs
     uterm = {
-        'lat': 33.22, # degrees
-        'lon': 35.10, # degrees
+        'lat': 43.22, # degrees
+        'lon': 15.10, # degrees
         'alt': 0.3048 * 30000, # meters
-        'EIRP': 58.5, # dBW
-        'G/T': 15.0 # dB/K
+        'EIRP': 57.0, # dBW
+        'G/T': 17.0 # dB/K
     }
     # satellite specs
     EIRP_sat_f, beam_id_fd = kgq.highest_EIRP_query(uterm['lat'], uterm['lon']) # dBW
@@ -283,7 +283,7 @@ if __name__ == "__main__":
     # satellite specs
     sat = {
         'lat': 0, # degrees
-        'lon': 31.0, # degrees
+        'lon': 11.0, # degrees
         'alt': R_GEO - R_EQUATOR, # meters
         'EIRP_f': EIRP_sat_f - OBO_FORWARD + np.log10(BW_ALLOCATED_FORWARD/BW_FORWARD), # dBW
         'G/T_f': GT_sat_f, # dB/K
